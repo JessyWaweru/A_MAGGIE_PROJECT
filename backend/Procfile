@@ -1,2 +1,2 @@
-release: python manage.py migrate
+release: python manage.py migrate && python manage.py seed_products
 web: gunicorn config.wsgi:application --log-file -
