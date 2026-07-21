@@ -1,0 +1,24 @@
+<div style="font-family: Georgia, 'Times New Roman', serif; max-width: 520px; margin: 0 auto; padding: 32px; background: #fbf7f0; border-radius: 16px; border: 1px solid #e4d9c4;">
+  <p style="font-size: 28px; text-align: center; margin: 0 0 8px;">🌿</p>
+  <h1 style="color: #3f5d3a; text-align: center; font-size: 22px; margin: 0 0 16px;">Thank you for your order</h1>
+  <p style="color: #4a4237; font-size: 15px; line-height: 1.6;">Hi {{ order.user.first_name|default:order.user.email }},</p>
+  <p style="color: #4a4237; font-size: 15px; line-height: 1.6;">
+    We've received your order <strong>#{{ order.order_number }}</strong> and payment has been confirmed. Here's what's on its way:
+  </p>
+  <table style="width: 100%; border-collapse: collapse; margin: 20px 0; font-size: 14px; color: #4a4237;">
+    {% for item in order.items.all %}
+    <tr style="border-bottom: 1px solid #e4d9c4;">
+      <td style="padding: 8px 0;">{{ item.product_name }} × {{ item.quantity }}</td>
+      <td style="padding: 8px 0; text-align: right;">{{ order.currency }} {{ item.line_total }}</td>
+    </tr>
+    {% endfor %}
+    <tr>
+      <td style="padding: 10px 0; font-weight: bold;">Total</td>
+      <td style="padding: 10px 0; text-align: right; font-weight: bold;">{{ order.currency }} {{ order.total_amount }}</td>
+    </tr>
+  </table>
+  <p style="color: #4a4237; font-size: 15px; line-height: 1.6;">
+    Shipping to: {{ order.shipping_address_text }}
+  </p>
+  <p style="color: #8a7f6c; font-size: 12px; margin-top: 24px;">We'll email you again once your order ships.</p>
+</div>

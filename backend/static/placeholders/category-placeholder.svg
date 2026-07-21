@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="400" height="300" viewBox="0 0 400 300">
+  <rect width="400" height="300" fill="#f0ead9"/>
+  <g fill="#7c9c63" opacity="0.9">
+    <ellipse cx="120" cy="150" rx="60" ry="34" transform="rotate(-30 120 150)"/>
+    <ellipse cx="200" cy="120" rx="60" ry="34" transform="rotate(10 200 120)"/>
+    <ellipse cx="280" cy="160" rx="60" ry="34" transform="rotate(40 280 160)"/>
+  </g>
+  <text x="200" y="230" text-anchor="middle" font-family="Georgia, serif" font-size="16" fill="#6b6146">Category image coming soon</text>
+</svg>

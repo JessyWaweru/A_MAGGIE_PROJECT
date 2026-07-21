@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="600" height="400" viewBox="0 0 600 400">
+  <defs>
+    <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#eaf1e0"/>
+      <stop offset="100%" stop-color="#f7f1de"/>
+    </linearGradient>
+  </defs>
+  <rect width="600" height="400" fill="url(#sky)"/>
+  <rect y="300" width="600" height="100" fill="#a9c088"/>
+  <rect y="320" width="600" height="80" fill="#8fae6c"/>
+  <!-- plants -->
+  <g fill="#5c7a45">
+    <path d="M120 320 C100 260 140 200 170 190 C170 260 150 300 120 320 Z"/>
+    <path d="M150 320 C170 270 150 220 120 205 C110 260 120 300 150 320 Z"/>
+  </g>
+  <g fill="#6b8e5a">
+    <path d="M300 320 C280 240 330 190 370 180 C365 250 340 300 300 320 Z"/>
+    <path d="M340 320 C355 260 335 210 300 195 C285 250 300 300 340 320 Z"/>
+    <path d="M380 320 C400 270 385 220 355 205 C345 260 355 300 380 320 Z"/>
+  </g>
+  <g fill="#7c9c63">
+    <path d="M470 320 C450 270 480 230 510 222 C508 265 490 300 470 320 Z"/>
+    <path d="M500 320 C515 280 500 245 475 232 C465 270 478 300 500 320 Z"/>
+  </g>
+  <circle cx="90" cy="330" r="6" fill="#e7c873"/>
+  <circle cx="430" cy="335" r="6" fill="#e7c873"/>
+  <text x="300" y="60" text-anchor="middle" font-family="Georgia, serif" font-size="20" fill="#6b6146">From the garden</text>
+  <text x="300" y="86" text-anchor="middle" font-family="Georgia, serif" font-size="13" fill="#8a7f6c">Photo coming soon</text>
+</svg>
