@@ -5,6 +5,7 @@ from rest_framework.response import Response
 
 from .filters import ProductFilter
 from .models import Category, Ingredient, PlantOrigin, Product, Review, Symptom, WishlistItem
+from .search import rank_products
 from .serializers import (
     CategorySerializer,
     IngredientSerializer,
@@ -57,6 +58,46 @@ class ProductViewSet(viewsets.ReadOnlyModelViewSet):
         page = self.paginate_queryset(qs)
         serializer = self.get_serializer(page or qs, many=True)
         return self.get_paginated_response(serializer.data) if page is not None else Response(serializer.data)
+
+    @action(detail=False, methods=["get"], url_path="smart-search")
+    def smart_search(self, request):
+        """Free-text search that understands how people describe their concerns.
+
+        Never returns an empty page: with no match it falls back to bestsellers
+        and sets `fallback: true` so the UI can say so.
+        """
+        query = request.query_params.get("q", "").strip()[:200]
+        try:
+            limit = max(1, min(int(request.query_params.get("limit", 48)), 48))
+        except ValueError:
+            limit = 48
+
+        products = list(
+            Product.objects.filter(status=Product.Status.ACTIVE)
+            .select_related(*PRODUCT_RELATED)
+            .prefetch_related("symptoms", "ingredients")
+        )
+        symptoms = list(Symptom.objects.all())
+        ranked, concerns = rank_products(query, products, symptoms)
+
+        fallback = not ranked
+        if fallback:
+            results = sorted(
+                products, key=lambda p: (not p.is_bestseller, -float(p.average_rating), p.name)
+            )[:limit]
+        else:
+            results = [r.product for r in ranked[:limit]]
+
+        matched = sorted((s for s in symptoms if s.slug in concerns), key=lambda s: -concerns[s.slug])
+        return Response(
+            {
+                "query": query,
+                "count": 0 if fallback else len(ranked),
+                "fallback": fallback,
+                "concerns": SymptomSerializer(matched, many=True).data,
+                "results": ProductListSerializer(results, many=True, context={"request": request}).data,
+            }
+        )
 
     @action(detail=False, methods=["get"])
     def bestsellers(self, request):
