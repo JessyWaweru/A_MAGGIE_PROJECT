@@ -145,7 +145,7 @@ SIMPLE_JWT = {
 }
 
 SPECTACULAR_SETTINGS = {
-    "TITLE": "Herb Medicine API",
+    "TITLE": "GO herbal API",
     "DESCRIPTION": "API for the herbal remedies e-commerce platform.",
     "VERSION": "1.0.0",
     "SERVE_INCLUDE_SCHEMA": False,
@@ -174,8 +174,9 @@ EMAIL_PORT = env.int("EMAIL_PORT", default=587)
 EMAIL_HOST_USER = env("EMAIL_HOST_USER", default="")
 EMAIL_HOST_PASSWORD = env("EMAIL_HOST_PASSWORD", default="")
 EMAIL_USE_TLS = env.bool("EMAIL_USE_TLS", default=True)
+EMAIL_TIMEOUT = env.int("EMAIL_TIMEOUT", default=10)
 DEFAULT_FROM_EMAIL = env(
-    "DEFAULT_FROM_EMAIL", default="Herb & Root <no-reply@herbandroot.test>"
+    "DEFAULT_FROM_EMAIL", default="GO herbal <no-reply@goherbal.health>"
 )
 
 # Payments - Paystack

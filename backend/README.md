@@ -1,4 +1,4 @@
-# Herb & Root — Backend
+# GO herbal — Backend
 
 Django + Django REST Framework API for the herbal remedies e-commerce site.
 
