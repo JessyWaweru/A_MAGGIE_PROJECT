@@ -1,11 +1,12 @@
 from rest_framework.routers import DefaultRouter
-from rest_framework_simplejwt.views import TokenRefreshView
 
 from django.urls import include, path
 
 from .views import (
     AddressViewSet,
     ChangePasswordView,
+    CookieTokenRefreshView,
+    CsrfTokenView,
     LoginView,
     LogoutView,
     MeView,
@@ -22,7 +23,8 @@ router.register("addresses", AddressViewSet, basename="address")
 urlpatterns = [
     path("register/", RegisterView.as_view(), name="auth-register"),
     path("login/", LoginView.as_view(), name="auth-login"),
-    path("login/refresh/", TokenRefreshView.as_view(), name="auth-login-refresh"),
+    path("csrf/", CsrfTokenView.as_view(), name="auth-csrf"),
+    path("login/refresh/", CookieTokenRefreshView.as_view(), name="auth-login-refresh"),
     path("logout/", LogoutView.as_view(), name="auth-logout"),
     path("verify-email/", VerifyEmailView.as_view(), name="auth-verify-email"),
     path("verify-email/resend/", ResendVerificationView.as_view(), name="auth-resend-verification"),

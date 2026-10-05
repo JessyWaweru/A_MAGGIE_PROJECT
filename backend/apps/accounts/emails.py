@@ -5,8 +5,6 @@ from django.template.loader import render_to_string
 from django.utils.encoding import force_bytes
 from django.utils.http import urlsafe_base64_encode
 
-from .tokens import email_verification_token
-
 
 def _send(subject, template_name, context, to_email):
     html_body = render_to_string(f"emails/{template_name}.html", context)
@@ -20,14 +18,11 @@ def _send(subject, template_name, context, to_email):
     )
 
 
-def send_verification_email(user):
-    uid = urlsafe_base64_encode(force_bytes(user.pk))
-    token = email_verification_token.make_token(user)
-    link = f"{settings.FRONTEND_URL}/verify-email/{uid}/{token}"
+def send_verification_code_email(user, code, minutes_valid):
     _send(
-        subject="Confirm your email — GO herbal",
+        subject=f"{code} is your GOherbal verification code",
         template_name="verify_email",
-        context={"user": user, "link": link},
+        context={"user": user, "code": code, "minutes_valid": minutes_valid},
         to_email=user.email,
     )
 
@@ -37,7 +32,7 @@ def send_password_reset_email(user):
     token = default_token_generator.make_token(user)
     link = f"{settings.FRONTEND_URL}/reset-password/{uid}/{token}"
     _send(
-        subject="Reset your password — GO herbal",
+        subject="Reset your password — GOherbal",
         template_name="password_reset",
         context={"user": user, "link": link},
         to_email=user.email,
@@ -46,7 +41,7 @@ def send_password_reset_email(user):
 
 def send_welcome_email(user):
     _send(
-        subject="Welcome to GO herbal",
+        subject="Welcome to GOherbal",
         template_name="welcome",
         context={"user": user, "FRONTEND_URL": settings.FRONTEND_URL},
         to_email=user.email,

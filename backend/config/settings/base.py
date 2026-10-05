@@ -91,6 +91,7 @@ AUTH_PASSWORD_VALIDATORS = [
     {"NAME": "django.contrib.auth.password_validation.MinimumLengthValidator", "OPTIONS": {"min_length": 8}},
     {"NAME": "django.contrib.auth.password_validation.CommonPasswordValidator"},
     {"NAME": "django.contrib.auth.password_validation.NumericPasswordValidator"},
+    {"NAME": "apps.accounts.validators.PasswordComplexityValidator"},
 ]
 
 # Internationalization
@@ -111,7 +112,7 @@ DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 # django-rest-framework
 REST_FRAMEWORK = {
     "DEFAULT_AUTHENTICATION_CLASSES": (
-        "rest_framework_simplejwt.authentication.JWTAuthentication",
+        "apps.accounts.authentication.CookieJWTAuthentication",
     ),
     "DEFAULT_PERMISSION_CLASSES": (
         "rest_framework.permissions.IsAuthenticatedOrReadOnly",
@@ -129,6 +130,8 @@ REST_FRAMEWORK = {
     ),
     "DEFAULT_THROTTLE_RATES": {
         "auth": "20/min",
+        "verify_code": "10/min",
+        "resend_code": "5/min",
         "password_reset": "5/min",
     },
 }
@@ -145,7 +148,7 @@ SIMPLE_JWT = {
 }
 
 SPECTACULAR_SETTINGS = {
-    "TITLE": "GO herbal API",
+    "TITLE": "GOherbal API",
     "DESCRIPTION": "API for the herbal remedies e-commerce platform.",
     "VERSION": "1.0.0",
     "SERVE_INCLUDE_SCHEMA": False,
@@ -162,6 +165,17 @@ CSRF_TRUSTED_ORIGINS = env.list(
 )
 CORS_ALLOW_CREDENTIALS = True
 
+# Auth cookies (see apps/accounts/cookies.py). "Lax" requires the site and API to share a
+# registrable domain (e.g. goherbal.health + api.goherbal.health; in dev, localhost + localhost).
+AUTH_COOKIE_SECURE = env.bool("AUTH_COOKIE_SECURE", default=not DEBUG)
+AUTH_COOKIE_SAMESITE = env("AUTH_COOKIE_SAMESITE", default="Lax")
+AUTH_COOKIE_DOMAIN = env("AUTH_COOKIE_DOMAIN", default=None)
+CSRF_COOKIE_SAMESITE = AUTH_COOKIE_SAMESITE
+CSRF_COOKIE_DOMAIN = AUTH_COOKIE_DOMAIN
+
+# Cloudflare Turnstile (bot check on sign-up / password reset). Fails closed when unset.
+TURNSTILE_SECRET_KEY = env("TURNSTILE_SECRET_KEY", default="")
+
 # Frontend base URL, used to build links inside emails (verification, reset, etc.)
 FRONTEND_URL = env("FRONTEND_URL", default="http://localhost:5173")
 
@@ -176,8 +190,11 @@ EMAIL_HOST_PASSWORD = env("EMAIL_HOST_PASSWORD", default="")
 EMAIL_USE_TLS = env.bool("EMAIL_USE_TLS", default=True)
 EMAIL_TIMEOUT = env.int("EMAIL_TIMEOUT", default=10)
 DEFAULT_FROM_EMAIL = env(
-    "DEFAULT_FROM_EMAIL", default="GO herbal <no-reply@goherbal.health>"
+    "DEFAULT_FROM_EMAIL", default="GOherbal <no-reply@goherbal.health>"
 )
+
+# Resend inbound-email webhook signing secret (from the Resend dashboard, starts "whsec_")
+RESEND_INBOUND_WEBHOOK_SECRET = env("RESEND_INBOUND_WEBHOOK_SECRET", default="")
 
 # Payments - Paystack
 PAYSTACK_SECRET_KEY = env("PAYSTACK_SECRET_KEY", default="")

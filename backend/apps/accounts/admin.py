@@ -28,6 +28,7 @@ class UserAdmin(BaseUserAdmin):
                 )
             },
         ),
+        ("Sign-in security", {"fields": ("failed_login_attempts", "locked_until")}),
         ("Important dates", {"fields": ("last_login", "date_joined")}),
     )
     add_fieldsets = (

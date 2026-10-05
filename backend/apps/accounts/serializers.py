@@ -1,12 +1,11 @@
 from django.contrib.auth import password_validation
 from django.contrib.auth.tokens import default_token_generator
+from django.core.exceptions import ValidationError as DjangoValidationError
 from django.utils.encoding import force_str
 from django.utils.http import urlsafe_base64_decode
 from rest_framework import serializers
-from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 
 from .models import Address, User
-from .tokens import email_verification_token
 
 
 class UserSerializer(serializers.ModelSerializer):
@@ -26,60 +25,70 @@ class UserSerializer(serializers.ModelSerializer):
 
 
 class RegisterSerializer(serializers.ModelSerializer):
-    password = serializers.CharField(write_only=True, min_length=8)
+    password = serializers.CharField(write_only=True, max_length=128, trim_whitespace=False)
+    first_name = serializers.CharField(max_length=150)
 
     class Meta:
         model = User
         fields = ["email", "password", "first_name", "last_name", "phone_number", "newsletter_opt_in"]
+        # Uniqueness is handled in validate_email so an abandoned, never-verified
+        # sign-up can be completed again instead of locking the address out.
+        extra_kwargs = {"email": {"validators": []}}
 
     def validate_email(self, value):
         value = value.lower().strip()
-        if User.objects.filter(email__iexact=value).exists():
+        existing = User.objects.filter(email__iexact=value).first()
+        if existing and existing.is_email_verified:
             raise serializers.ValidationError("An account with this email already exists.")
+        self._pending_user = existing
         return value
 
-    def validate_password(self, value):
-        password_validation.validate_password(value)
+    def validate_first_name(self, value):
+        value = value.strip()
+        if not value:
+            raise serializers.ValidationError("Enter your first name.")
         return value
+
+    def validate(self, attrs):
+        # Validate against the user's own details so "Jessy2024!" style passwords are caught.
+        candidate = User(email=attrs["email"], first_name=attrs.get("first_name", ""), last_name=attrs.get("last_name", ""))
+        try:
+            password_validation.validate_password(attrs["password"], candidate)
+        except DjangoValidationError as exc:
+            raise serializers.ValidationError({"password": list(exc.messages)})
+        return attrs
 
     def create(self, validated_data):
         password = validated_data.pop("password")
-        user = User(**validated_data, username=validated_data["email"])
+        user = getattr(self, "_pending_user", None) or User(username=validated_data["email"])
+        for field, value in validated_data.items():
+            setattr(user, field, value)
         user.set_password(password)
         user.save()
         return user
 
 
-class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
-    """Adds basic profile info to the token response so the frontend
-    doesn't need a second round trip right after login."""
+class LoginSerializer(serializers.Serializer):
+    email = serializers.EmailField()
+    password = serializers.CharField(max_length=128, trim_whitespace=False)
 
-    def validate(self, attrs):
-        data = super().validate(attrs)
-        data["user"] = UserSerializer(self.user).data
-        return data
+    def validate_email(self, value):
+        return value.lower().strip()
 
 
-class EmailVerifyConfirmSerializer(serializers.Serializer):
-    uid = serializers.CharField()
-    token = serializers.CharField()
+class VerifyCodeSerializer(serializers.Serializer):
+    email = serializers.EmailField()
+    code = serializers.RegexField(r"^\s*\d{6}\s*$", error_messages={"invalid": "Enter the 6-digit code."})
 
-    def validate(self, attrs):
-        try:
-            uid = force_str(urlsafe_base64_decode(attrs["uid"]))
-            user = User.objects.get(pk=uid)
-        except (User.DoesNotExist, ValueError, TypeError, OverflowError):
-            raise serializers.ValidationError("Invalid verification link.")
-
-        if not email_verification_token.check_token(user, attrs["token"]):
-            raise serializers.ValidationError("This verification link is invalid or has expired.")
-
-        attrs["user"] = user
-        return attrs
+    def validate_email(self, value):
+        return value.lower().strip()
 
 
 class ResendVerificationSerializer(serializers.Serializer):
     email = serializers.EmailField()
+
+    def validate_email(self, value):
+        return value.lower().strip()
 
 
 class PasswordResetRequestSerializer(serializers.Serializer):
@@ -89,7 +98,7 @@ class PasswordResetRequestSerializer(serializers.Serializer):
 class PasswordResetConfirmSerializer(serializers.Serializer):
     uid = serializers.CharField()
     token = serializers.CharField()
-    new_password = serializers.CharField(min_length=8)
+    new_password = serializers.CharField(min_length=8, max_length=128, trim_whitespace=False)
 
     def validate(self, attrs):
         try:
@@ -108,7 +117,7 @@ class PasswordResetConfirmSerializer(serializers.Serializer):
 
 class ChangePasswordSerializer(serializers.Serializer):
     old_password = serializers.CharField()
-    new_password = serializers.CharField(min_length=8)
+    new_password = serializers.CharField(min_length=8, max_length=128, trim_whitespace=False)
 
     def validate_old_password(self, value):
         user = self.context["request"].user

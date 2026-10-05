@@ -3,6 +3,7 @@ import uuid
 from django.contrib.auth.base_user import BaseUserManager
 from django.contrib.auth.models import AbstractUser
 from django.db import models
+from django.utils import timezone
 
 
 class UserManager(BaseUserManager):
@@ -42,6 +43,8 @@ class User(AbstractUser):
     phone_number = models.CharField(max_length=20, blank=True)
     is_email_verified = models.BooleanField(default=False)
     newsletter_opt_in = models.BooleanField(default=True)
+    failed_login_attempts = models.PositiveSmallIntegerField(default=0)
+    locked_until = models.DateTimeField(null=True, blank=True)
 
     USERNAME_FIELD = "email"
     REQUIRED_FIELDS = []
@@ -53,6 +56,19 @@ class User(AbstractUser):
 
     def __str__(self):
         return self.email
+
+
+class EmailVerificationCode(models.Model):
+    """The single active sign-up code for a user. Only an HMAC of the code is stored."""
+
+    user = models.OneToOneField(User, on_delete=models.CASCADE, primary_key=True, related_name="verification_code")
+    code_hash = models.CharField(max_length=64)
+    created_at = models.DateTimeField(default=timezone.now)
+    expires_at = models.DateTimeField()
+    attempts = models.PositiveSmallIntegerField(default=0)
+
+    def __str__(self):
+        return f"Verification code for {self.user}"
 
 
 class Address(models.Model):
