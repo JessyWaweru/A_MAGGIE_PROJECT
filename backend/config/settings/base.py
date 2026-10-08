@@ -193,6 +193,10 @@ DEFAULT_FROM_EMAIL = env(
     "DEFAULT_FROM_EMAIL", default="GOherbal <no-reply@goherbal.health>"
 )
 
+# Logo shown at the top of every email. Must be a public https URL (mail clients fetch it
+# themselves), so it points at the live site even in local development.
+EMAIL_LOGO_URL = env("EMAIL_LOGO_URL", default="https://goherbal.health/brand/goherbal-logo-email.png")
+
 # Resend inbound-email webhook signing secret (from the Resend dashboard, starts "whsec_")
 RESEND_INBOUND_WEBHOOK_SECRET = env("RESEND_INBOUND_WEBHOOK_SECRET", default="")
 

@@ -7,7 +7,7 @@ from django.utils.http import urlsafe_base64_encode
 
 
 def _send(subject, template_name, context, to_email):
-    html_body = render_to_string(f"emails/{template_name}.html", context)
+    html_body = render_to_string(f"emails/{template_name}.html", {"logo_url": settings.EMAIL_LOGO_URL, **context})
     send_mail(
         subject=subject,
         message=html_body,
