@@ -7,7 +7,7 @@ Django + Django REST Framework API for the herbal remedies e-commerce site.
 - Django 6, Django REST Framework
 - JWT auth (`djangorestframework-simplejwt`), email verification, password reset
 - `django-filter` for product search/filtering, `drf-spectacular` for API docs
-- SQLite by default in dev, swap in `DATABASE_URL` for Postgres in prod
+- SQLite by default in dev; production runs on Render Postgres via `DATABASE_URL`
 - Paystack for payments (works with M-Pesa and cards in Kenya)
 
 ## Setup
@@ -73,3 +73,20 @@ emails print to the terminal in dev. Switch to SMTP in `.env` for production.
 Set `PAYSTACK_SECRET_KEY` / `PAYSTACK_PUBLIC_KEY` in `.env` (test keys from
 the Paystack dashboard work immediately). Without keys, `/payments/initialize/`
 fails gracefully with a clear error instead of crashing.
+
+## Deployment (Render)
+
+- **Backend**: a Render web service running this app, with a custom domain
+  (`api.goherbal.health`) and the release command in `Procfile` (`migrate` +
+  `seed_products`) running on every deploy.
+- **Database**: a separate Render Postgres instance. Set the backend's
+  `DATABASE_URL` to its *Internal* Database URL (same region = free, faster).
+  Render's free Postgres tier expires after 90 days — use a paid plan for
+  anything meant to persist.
+- **Frontend**: the `herb-root-frontend` repo, deployed as a Render static
+  site with its own custom domain (`goherbal.health` / `www`).
+- Cookie-based auth requires the backend and frontend to share a registrable
+  domain, hence the `api.` subdomain split above rather than two unrelated
+  `*.onrender.com` hosts. `ALLOWED_HOSTS`, `CORS_ALLOWED_ORIGINS`,
+  `CSRF_TRUSTED_ORIGINS` and `FRONTEND_URL` must match the real domains in
+  the backend service's environment variables.
