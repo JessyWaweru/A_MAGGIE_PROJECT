@@ -197,6 +197,9 @@ DEFAULT_FROM_EMAIL = env(
 # themselves), so it points at the live site even in local development.
 EMAIL_LOGO_URL = env("EMAIL_LOGO_URL", default="https://goherbal.health/brand/goherbal-logo-email.png")
 
+# Resend API key (dashboard → API Keys), used by the HTTPS email backend in production
+RESEND_API_KEY = env("RESEND_API_KEY", default="")
+
 # Resend inbound-email webhook signing secret (from the Resend dashboard, starts "whsec_")
 RESEND_INBOUND_WEBHOOK_SECRET = env("RESEND_INBOUND_WEBHOOK_SECRET", default="")
 

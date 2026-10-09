@@ -3,6 +3,7 @@ from datetime import timedelta
 
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import update_last_login
+from django.db import transaction
 from django.middleware.csrf import get_token
 from django.utils import timezone
 from django.utils.decorators import method_decorator
@@ -86,8 +87,10 @@ class RegisterView(generics.CreateAPIView):
             return _bot_check_failed()
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        user = serializer.save()
-        issue_code(user)
+        # If the code can't be emailed, roll the account back so the user can simply retry.
+        with transaction.atomic():
+            user = serializer.save()
+            issue_code(user)
         return Response(
             {
                 "email": user.email,

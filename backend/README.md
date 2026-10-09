@@ -66,7 +66,11 @@ needed.
 ## Email
 
 `EMAIL_BACKEND` defaults to the console backend, so verification/reset/order
-emails print to the terminal in dev. Switch to SMTP in `.env` for production.
+emails print to the terminal in dev. Production settings send through Resend's
+HTTPS API instead (`apps.core.email_backend.ResendEmailBackend`): set
+`RESEND_API_KEY` and leave `EMAIL_BACKEND` unset. The sending domain in
+`DEFAULT_FROM_EMAIL` must be verified in Resend. SMTP won't work on Render's
+free tier, which blocks outbound SMTP ports.
 
 ## Payments
 

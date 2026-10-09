@@ -10,6 +10,10 @@ RENDER_EXTERNAL_HOSTNAME = os.environ.get("RENDER_EXTERNAL_HOSTNAME")
 if RENDER_EXTERNAL_HOSTNAME:
     ALLOWED_HOSTS.append(RENDER_EXTERNAL_HOSTNAME)
 
+# Send through Resend's HTTPS API: Render's free tier blocks outbound SMTP ports, and the
+# console default in base.py would silently swallow every email.
+EMAIL_BACKEND = env("EMAIL_BACKEND", default="apps.core.email_backend.ResendEmailBackend")
+
 STORAGES = {
     "default": {"BACKEND": "django.core.files.storage.FileSystemStorage"},
     "staticfiles": {"BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage"},
