@@ -4,7 +4,7 @@ from apps.accounts.models import Address
 from apps.products.models import Product
 from apps.products.serializers import ProductListSerializer
 
-from .models import Cart, CartItem, Order, OrderItem
+from .models import Cart, CartItem, DeliveryOption, Order, OrderItem, OrderStatusEvent, rider_zone_for
 
 
 class CartItemSerializer(serializers.ModelSerializer):
@@ -49,8 +49,26 @@ class OrderItemSerializer(serializers.ModelSerializer):
         return obj.product.primary_image_url if obj.product else None
 
 
+class DeliveryOptionSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = DeliveryOption
+        fields = ["id", "method", "name", "description", "eta", "fee", "max_distance_km", "address", "latitude", "longitude"]
+
+
+class DeliveryQuoteSerializer(serializers.Serializer):
+    latitude = serializers.DecimalField(max_digits=9, decimal_places=6, min_value=-90, max_value=90)
+    longitude = serializers.DecimalField(max_digits=9, decimal_places=6, min_value=-180, max_value=180)
+
+
+class OrderStatusEventSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = OrderStatusEvent
+        fields = ["status", "created_at"]
+
+
 class OrderSerializer(serializers.ModelSerializer):
     items = OrderItemSerializer(many=True, read_only=True)
+    status_events = OrderStatusEventSerializer(many=True, read_only=True)
     shipping_address_text = serializers.ReadOnlyField()
 
     class Meta:
@@ -59,10 +77,18 @@ class OrderSerializer(serializers.ModelSerializer):
             "id",
             "order_number",
             "status",
+            "status_events",
             "items",
             "full_name",
             "phone_number",
             "shipping_address_text",
+            "delivery_method",
+            "delivery_option_name",
+            "latitude",
+            "longitude",
+            "landmark",
+            "pickup_agent",
+            "tracking_code",
             "subtotal",
             "shipping_fee",
             "total_amount",
@@ -74,16 +100,44 @@ class OrderSerializer(serializers.ModelSerializer):
         read_only_fields = fields
 
 
+ADDRESS_FIELDS = [
+    "full_name",
+    "phone_number",
+    "address_line1",
+    "address_line2",
+    "city",
+    "county_or_state",
+    "postal_code",
+    "country",
+    "landmark",
+    "latitude",
+    "longitude",
+]
+
+
 class CheckoutSerializer(serializers.Serializer):
+    """Validates checkout input and resolves the delivery option, fee and address snapshot.
+
+    For rider delivery the zone (and so the fee) comes from the map pin, never from the client.
+    """
+
+    delivery_method = serializers.ChoiceField(choices=DeliveryOption.Method.choices)
+    delivery_option_id = serializers.PrimaryKeyRelatedField(
+        queryset=DeliveryOption.objects.filter(is_active=True), required=False
+    )
     address_id = serializers.PrimaryKeyRelatedField(queryset=Address.objects.none(), required=False)
     full_name = serializers.CharField(max_length=150, required=False)
     phone_number = serializers.CharField(max_length=20, required=False)
-    address_line1 = serializers.CharField(max_length=255, required=False)
+    address_line1 = serializers.CharField(max_length=255, required=False, allow_blank=True)
     address_line2 = serializers.CharField(max_length=255, required=False, allow_blank=True)
-    city = serializers.CharField(max_length=100, required=False)
+    city = serializers.CharField(max_length=100, required=False, allow_blank=True)
     county_or_state = serializers.CharField(max_length=100, required=False, allow_blank=True)
     postal_code = serializers.CharField(max_length=20, required=False, allow_blank=True)
     country = serializers.CharField(max_length=100, required=False, default="Kenya")
+    landmark = serializers.CharField(max_length=255, required=False, allow_blank=True)
+    latitude = serializers.DecimalField(max_digits=9, decimal_places=6, required=False, allow_null=True)
+    longitude = serializers.DecimalField(max_digits=9, decimal_places=6, required=False, allow_null=True)
+    pickup_agent = serializers.CharField(max_length=255, required=False, allow_blank=True)
     customer_notes = serializers.CharField(required=False, allow_blank=True)
 
     def __init__(self, *args, **kwargs):
@@ -93,11 +147,41 @@ class CheckoutSerializer(serializers.Serializer):
             self.fields["address_id"].queryset = Address.objects.filter(user=request.user)
 
     def validate(self, attrs):
-        if "address_id" not in attrs:
-            required_inline = ["full_name", "phone_number", "address_line1", "city"]
-            missing = [f for f in required_inline if not attrs.get(f)]
-            if missing:
+        method = attrs["delivery_method"]
+        if "address_id" in attrs:
+            address = attrs["address_id"]
+            fields = {name: getattr(address, name) for name in ADDRESS_FIELDS}
+        else:
+            fields = {name: attrs.get(name) for name in ADDRESS_FIELDS}
+        fields = {k: ("" if v is None and k not in ("latitude", "longitude") else v) for k, v in fields.items()}
+        fields["country"] = fields["country"] or "Kenya"
+
+        required = ["full_name", "phone_number"]
+        if method == DeliveryOption.Method.RIDER:
+            required += ["address_line1", "city"]
+        missing = [f for f in required if not fields.get(f)]
+        if missing:
+            raise serializers.ValidationError(f"Please provide: {', '.join(f.replace('_', ' ') for f in missing)}.")
+
+        if method == DeliveryOption.Method.RIDER:
+            if fields["latitude"] is None or fields["longitude"] is None:
+                raise serializers.ValidationError("Drop a pin on the map so our rider can find you.")
+            option, _ = rider_zone_for(fields["latitude"], fields["longitude"])
+            if option is None:
                 raise serializers.ValidationError(
-                    f"Provide address_id or these fields: {', '.join(missing)}."
+                    "That location is outside our rider delivery area. Choose a pickup agent near you instead."
                 )
+        else:
+            option = attrs.get("delivery_option_id") or DeliveryOption.objects.filter(
+                method=method, is_active=True
+            ).first()
+            if option is None or option.method != method:
+                raise serializers.ValidationError("That delivery option isn't available right now.")
+            if method == DeliveryOption.Method.AGENT and not attrs.get("pickup_agent", "").strip():
+                raise serializers.ValidationError("Tell us which pickup agent you'd like to collect from.")
+            # Pickup and agent orders don't need a street address or pin.
+            fields.update(latitude=None, longitude=None)
+
+        attrs["delivery_option"] = option
+        attrs["address_fields"] = fields
         return attrs

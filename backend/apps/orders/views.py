@@ -2,15 +2,17 @@ from decimal import Decimal
 
 from django.db import transaction
 from django.shortcuts import get_object_or_404
-from rest_framework import permissions, status, viewsets
+from rest_framework import generics, permissions, status, viewsets
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from .models import Cart, CartItem, Order, OrderItem
+from .models import Cart, CartItem, DeliveryOption, Order, OrderItem, rider_zone_for
 from .serializers import (
     AddCartItemSerializer,
     CartSerializer,
     CheckoutSerializer,
+    DeliveryOptionSerializer,
+    DeliveryQuoteSerializer,
     OrderSerializer,
     UpdateCartItemSerializer,
 )
@@ -93,40 +95,21 @@ class CheckoutView(APIView):
         serializer = CheckoutSerializer(data=request.data, context={"request": request})
         serializer.is_valid(raise_exception=True)
         data = serializer.validated_data
-
-        if "address_id" in data:
-            address = data["address_id"]
-            address_fields = {
-                "full_name": address.full_name,
-                "phone_number": address.phone_number,
-                "address_line1": address.address_line1,
-                "address_line2": address.address_line2,
-                "city": address.city,
-                "county_or_state": address.county_or_state,
-                "postal_code": address.postal_code,
-                "country": address.country,
-            }
-        else:
-            address_fields = {
-                "full_name": data["full_name"],
-                "phone_number": data["phone_number"],
-                "address_line1": data["address_line1"],
-                "address_line2": data.get("address_line2", ""),
-                "city": data["city"],
-                "county_or_state": data.get("county_or_state", ""),
-                "postal_code": data.get("postal_code", ""),
-                "country": data.get("country", "Kenya"),
-            }
+        option = data["delivery_option"]
 
         subtotal = sum((item.line_total for item in items), Decimal("0.00"))
         order = Order.objects.create(
             user=request.user,
             subtotal=subtotal,
-            shipping_fee=0,
-            total_amount=subtotal,
+            shipping_fee=option.fee,
+            total_amount=subtotal + option.fee,
             currency=items[0].product.currency,
             customer_notes=data.get("customer_notes", ""),
-            **address_fields,
+            delivery_option=option,
+            delivery_method=option.method,
+            delivery_option_name=option.name,
+            pickup_agent=data.get("pickup_agent", "").strip() if option.method == DeliveryOption.Method.AGENT else "",
+            **data["address_fields"],
         )
         OrderItem.objects.bulk_create(
             [
@@ -145,10 +128,35 @@ class CheckoutView(APIView):
         return Response(OrderSerializer(order).data, status=status.HTTP_201_CREATED)
 
 
+class DeliveryOptionListView(generics.ListAPIView):
+    queryset = DeliveryOption.objects.filter(is_active=True)
+    serializer_class = DeliveryOptionSerializer
+    permission_classes = [permissions.AllowAny]
+    pagination_class = None
+
+
+class DeliveryQuoteView(APIView):
+    """Prices rider delivery to a map pin, so the checkout can show the fee before ordering."""
+
+    permission_classes = [permissions.AllowAny]
+
+    def get(self, request):
+        serializer = DeliveryQuoteSerializer(data=request.query_params)
+        serializer.is_valid(raise_exception=True)
+        zone, km = rider_zone_for(serializer.validated_data["latitude"], serializer.validated_data["longitude"])
+        return Response(
+            {
+                "available": zone is not None,
+                "distance_km": round(km, 1),
+                "option": DeliveryOptionSerializer(zone).data if zone else None,
+            }
+        )
+
+
 class OrderViewSet(viewsets.ReadOnlyModelViewSet):
     serializer_class = OrderSerializer
     permission_classes = [permissions.IsAuthenticated]
     lookup_field = "order_number"
 
     def get_queryset(self):
-        return Order.objects.filter(user=self.request.user).prefetch_related("items__product")
+        return Order.objects.filter(user=self.request.user).prefetch_related("items__product", "status_events")

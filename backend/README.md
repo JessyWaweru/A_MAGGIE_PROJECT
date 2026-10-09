@@ -31,8 +31,9 @@ Admin: `http://127.0.0.1:8000/admin/`
 
 - `apps/accounts` — custom email-based User, JWT auth, email verification, password reset, saved addresses
 - `apps/products` — Category, Symptom, Ingredient, PlantOrigin, Product, image galleries, reviews, wishlist
-- `apps/orders` — Cart, CartItem, Order, OrderItem, checkout
-- `apps/payments` — Paystack initialize/verify/webhook
+- `apps/orders` — Cart, CartItem, Order, OrderItem, checkout, delivery options/fees, order status timeline
+- `apps/payments` — Paystack initialize/verify/webhook (for orders and consultations)
+- `apps/consultations` — herbal coaches and medical specialists, paid consultation bookings
 - `apps/core` — newsletter signup, contact form, shared model mixins
 
 ## Key endpoints
@@ -48,6 +49,11 @@ Admin: `http://127.0.0.1:8000/admin/`
 | GET | `/api/products/?search=headache` | Free-text search across name/description/**symptoms**/ingredients |
 | GET | `/api/products/?symptom=insomnia&category=teas-infusions` | Facet filtering |
 | GET | `/api/products/<slug>/` | Full detail: ingredients, plant gallery, reviews, related products |
+| GET | `/api/orders/delivery-options/` | Active delivery options and fees |
+| GET | `/api/orders/delivery-quote/?latitude=&longitude=` | Rider zone and fee for a map pin |
+| POST | `/api/orders/checkout/` | `delivery_method` (`pickup` / `rider` / `agent`) plus contact, address and pin |
+| GET | `/api/consultations/experts/?kind=herbal_coach` | Public expert profiles |
+| POST | `/api/consultations/bookings/` | Book a session (unpaid); pay with `/api/payments/initialize/` + `consultation_reference` |
 | GET/POST | `/api/products/<slug>/reviews/` | Product reviews |
 | GET/POST/DELETE | `/api/orders/cart/`, `/api/orders/cart/items/` | Cart management |
 | POST | `/api/orders/checkout/` | Cart → Order |
@@ -71,6 +77,31 @@ HTTPS API instead (`apps.core.email_backend.ResendEmailBackend`): set
 `RESEND_API_KEY` and leave `EMAIL_BACKEND` unset. The sending domain in
 `DEFAULT_FROM_EMAIL` must be verified in Resend. SMTP won't work on Render's
 free tier, which blocks outbound SMTP ports.
+
+## Delivery
+
+Delivery options and fees are edited in the admin (**Orders → Delivery options**); a
+migration seeds placeholder ones. There are three methods:
+
+- **Store pickup**: a CBD shop (placeholder address and fee).
+- **Rider**: Nairobi zones priced by straight-line distance from the dispatch point
+  (`DISPATCH_LATITUDE` / `DISPATCH_LONGITUDE`, default Nairobi CBD) to the customer's map pin.
+  The fee is always worked out on the server from the pin.
+- **Agent**: Pickup Mtaani-style collection points across the country, at a flat fee.
+
+When staff change an order's status in the admin, the change is added to the order's
+timeline, and the customer is emailed for ready-for-pickup, out-for-delivery,
+sent-to-agent and delivered. Order pages in the admin link riders to the customer's pin
+in Google Maps.
+
+## Consultations
+
+Experts are added in the admin (**Consultations → Experts**). Medical specialists need a
+licence number. Customers book with a preferred time and their concern, and the booking is
+confirmed once Paystack payment succeeds. The customer, the expert's private email and
+`CONSULTATIONS_TEAM_EMAIL` (optional) are then emailed. Staff set the confirmed time and any
+video link on the booking. A booking's concern is health information, so only the customer,
+the assigned expert and admins see it.
 
 ## Payments
 

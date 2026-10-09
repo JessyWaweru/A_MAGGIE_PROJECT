@@ -144,6 +144,9 @@ class AddressSerializer(serializers.ModelSerializer):
             "county_or_state",
             "postal_code",
             "country",
+            "landmark",
+            "latitude",
+            "longitude",
             "is_default",
             "created_at",
         ]

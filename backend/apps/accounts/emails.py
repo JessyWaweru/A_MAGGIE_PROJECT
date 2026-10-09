@@ -55,3 +55,40 @@ def send_order_confirmation_email(order):
         context={"order": order},
         to_email=order.user.email,
     )
+
+
+ORDER_STATUS_COPY = {
+    "ready_for_pickup": ("Your order is ready for pickup", "Your order is packed and waiting for you at our store."),
+    "out_for_delivery": ("Your order is on its way", "A rider has your order and is heading to you. They'll call before arriving."),
+    "shipped": (
+        "Your order is at the pickup agent",
+        "Your order has been sent to your chosen pickup agent. You'll receive an SMS when it's ready to collect.",
+    ),
+    "delivered": ("Your order has been delivered", "Your order has been delivered. We hope you enjoy your remedies!"),
+}
+
+
+def send_order_status_email(order):
+    headline, message = ORDER_STATUS_COPY[order.status]
+    _send(
+        subject=f"{headline} — #{order.order_number}",
+        template_name="order_status",
+        context={"order": order, "headline": headline, "message": message, "FRONTEND_URL": settings.FRONTEND_URL},
+        to_email=order.user.email,
+    )
+
+
+def send_consultation_confirmed_emails(consultation):
+    _send(
+        subject=f"Your consultation with {consultation.expert.name} is booked",
+        template_name="consultation_confirmed",
+        context={"consultation": consultation, "FRONTEND_URL": settings.FRONTEND_URL},
+        to_email=consultation.user.email,
+    )
+    for team_email in {consultation.expert.email, settings.CONSULTATIONS_TEAM_EMAIL} - {""}:
+        _send(
+            subject=f"New paid consultation {consultation.reference} — please schedule",
+            template_name="consultation_new_booking",
+            context={"consultation": consultation},
+            to_email=team_email,
+        )

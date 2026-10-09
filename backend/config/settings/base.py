@@ -42,6 +42,7 @@ LOCAL_APPS = [
     "apps.orders",
     "apps.payments",
     "apps.core",
+    "apps.consultations",
 ]
 
 INSTALLED_APPS = DJANGO_APPS + THIRD_PARTY_APPS + LOCAL_APPS
@@ -179,6 +180,10 @@ TURNSTILE_SECRET_KEY = env("TURNSTILE_SECRET_KEY", default="")
 # Frontend base URL, used to build links inside emails (verification, reset, etc.)
 FRONTEND_URL = env("FRONTEND_URL", default="http://localhost:5173")
 
+# Delivery: rider fees are priced by distance from this point (placeholder: Nairobi CBD)
+DISPATCH_LATITUDE = env.float("DISPATCH_LATITUDE", default=-1.2841)
+DISPATCH_LONGITUDE = env.float("DISPATCH_LONGITUDE", default=36.8233)
+
 # Email
 EMAIL_BACKEND = env(
     "EMAIL_BACKEND", default="django.core.mail.backends.console.EmailBackend"
@@ -202,6 +207,9 @@ RESEND_API_KEY = env("RESEND_API_KEY", default="")
 
 # Resend inbound-email webhook signing secret (from the Resend dashboard, starts "whsec_")
 RESEND_INBOUND_WEBHOOK_SECRET = env("RESEND_INBOUND_WEBHOOK_SECRET", default="")
+
+# Paid consultation bookings are also emailed here so the team can schedule them (optional)
+CONSULTATIONS_TEAM_EMAIL = env("CONSULTATIONS_TEAM_EMAIL", default="")
 
 # Payments - Paystack
 PAYSTACK_SECRET_KEY = env("PAYSTACK_SECRET_KEY", default="")

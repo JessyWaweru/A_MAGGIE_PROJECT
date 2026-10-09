@@ -2,7 +2,8 @@ from django.db import transaction
 from django.db.models import F
 from django.utils import timezone
 
-from apps.accounts.emails import send_order_confirmation_email
+from apps.accounts.emails import send_consultation_confirmed_emails, send_order_confirmation_email
+from apps.consultations.models import Consultation
 from apps.orders.models import Order
 from apps.products.models import Product
 
@@ -11,7 +12,9 @@ from .models import Payment
 
 @transaction.atomic
 def fulfill_successful_payment(payment: Payment, verify_data: dict):
-    """Idempotently mark a payment + its order as paid and decrement stock.
+    """Idempotently mark a payment as paid, then fulfil what it paid for.
+
+    For an order: mark it paid and decrement stock. For a consultation: confirm the booking.
 
     Safe to call multiple times (e.g. once from the client-triggered verify
     call and once from the Paystack webhook) - only acts the first time.
@@ -25,6 +28,10 @@ def fulfill_successful_payment(payment: Payment, verify_data: dict):
     payment.paid_at = timezone.now()
     payment.raw_response = verify_data
     payment.save(update_fields=["status", "channel", "paid_at", "raw_response", "updated_at"])
+
+    if payment.consultation_id:
+        _confirm_consultation(payment)
+        return payment
 
     order = Order.objects.select_for_update().get(pk=payment.order_id)
     if order.status == Order.Status.PENDING:
@@ -41,3 +48,12 @@ def fulfill_successful_payment(payment: Payment, verify_data: dict):
         send_order_confirmation_email(order)
 
     return payment
+
+
+def _confirm_consultation(payment):
+    consultation = Consultation.objects.select_for_update().get(pk=payment.consultation_id)
+    if consultation.status == Consultation.Status.PENDING_PAYMENT:
+        consultation.status = Consultation.Status.CONFIRMED
+        consultation.paid_at = timezone.now()
+        consultation.save(update_fields=["status", "paid_at", "updated_at"])
+        send_consultation_confirmed_emails(consultation)

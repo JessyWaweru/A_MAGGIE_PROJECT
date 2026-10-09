@@ -1,7 +1,9 @@
+import math
 import uuid
 from decimal import Decimal
 
 from django.conf import settings
+from django.core.exceptions import ValidationError
 from django.core.validators import MinValueValidator
 from django.db import models
 
@@ -47,12 +49,69 @@ class CartItem(TimeStampedModel):
         return self.product.price * self.quantity
 
 
+def distance_km(lat1, lng1, lat2, lng2) -> float:
+    """Straight-line (great-circle) distance between two points."""
+    lat1, lng1, lat2, lng2 = map(math.radians, (float(lat1), float(lng1), float(lat2), float(lng2)))
+    a = math.sin((lat2 - lat1) / 2) ** 2 + math.cos(lat1) * math.cos(lat2) * math.sin((lng2 - lng1) / 2) ** 2
+    return 6371 * 2 * math.asin(math.sqrt(a))
+
+
+class DeliveryOption(TimeStampedModel):
+    """A way to get an order to the customer, with its fee. Managed from the admin."""
+
+    class Method(models.TextChoices):
+        PICKUP = "pickup", "Store pickup"
+        RIDER = "rider", "Rider delivery"
+        AGENT = "agent", "Pickup agent (e.g. Pickup Mtaani)"
+
+    method = models.CharField(max_length=10, choices=Method.choices)
+    name = models.CharField(max_length=100)
+    description = models.CharField(max_length=255, blank=True)
+    eta = models.CharField(max_length=60, blank=True, help_text="Shown to customers, e.g. 'Same day'")
+    fee = models.DecimalField(max_digits=10, decimal_places=2, validators=[MinValueValidator(0)])
+    max_distance_km = models.DecimalField(
+        max_digits=6,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        help_text="Rider zones only: furthest straight-line distance from the dispatch point this fee covers.",
+    )
+    address = models.CharField(max_length=255, blank=True, help_text="Store pickup only: where to collect.")
+    latitude = models.DecimalField(max_digits=9, decimal_places=6, null=True, blank=True)
+    longitude = models.DecimalField(max_digits=9, decimal_places=6, null=True, blank=True)
+    is_active = models.BooleanField(default=True)
+    sort_order = models.PositiveIntegerField(default=0)
+
+    class Meta:
+        ordering = ["sort_order", "fee"]
+
+    def __str__(self):
+        return f"{self.name} ({self.fee})"
+
+    def clean(self):
+        if self.method == self.Method.RIDER and self.max_distance_km is None:
+            raise ValidationError({"max_distance_km": "Rider zones need a maximum distance."})
+
+
+def rider_zone_for(latitude, longitude):
+    """The cheapest active rider zone that reaches this point, and the distance to it."""
+    km = distance_km(settings.DISPATCH_LATITUDE, settings.DISPATCH_LONGITUDE, latitude, longitude)
+    zone = (
+        DeliveryOption.objects.filter(method=DeliveryOption.Method.RIDER, is_active=True, max_distance_km__gte=km)
+        .order_by("max_distance_km")
+        .first()
+    )
+    return zone, km
+
+
 class Order(TimeStampedModel):
     class Status(models.TextChoices):
         PENDING = "pending", "Pending payment"
         PAID = "paid", "Paid"
-        PROCESSING = "processing", "Processing"
-        SHIPPED = "shipped", "Shipped"
+        PROCESSING = "processing", "Being prepared"
+        READY_FOR_PICKUP = "ready_for_pickup", "Ready for pickup"
+        OUT_FOR_DELIVERY = "out_for_delivery", "Out for delivery"
+        SHIPPED = "shipped", "Sent to pickup agent"
         DELIVERED = "delivered", "Delivered"
         CANCELLED = "cancelled", "Cancelled"
         REFUNDED = "refunded", "Refunded"
@@ -60,14 +119,30 @@ class Order(TimeStampedModel):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     order_number = models.CharField(max_length=20, unique=True, default=generate_order_number, editable=False)
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="orders")
-    status = models.CharField(max_length=12, choices=Status.choices, default=Status.PENDING)
+    status = models.CharField(max_length=20, choices=Status.choices, default=Status.PENDING)
+
+    delivery_option = models.ForeignKey(
+        DeliveryOption, on_delete=models.SET_NULL, null=True, blank=True, related_name="orders"
+    )
+    # Snapshots, so changing an option later doesn't rewrite past orders
+    delivery_method = models.CharField(max_length=10, choices=DeliveryOption.Method.choices, blank=True)
+    delivery_option_name = models.CharField(max_length=100, blank=True)
+    # Rider deliveries: the customer's map pin and directions for the rider
+    latitude = models.DecimalField(max_digits=9, decimal_places=6, null=True, blank=True)
+    longitude = models.DecimalField(max_digits=9, decimal_places=6, null=True, blank=True)
+    landmark = models.CharField(max_length=255, blank=True)
+    # Agent deliveries: the agent point the customer will collect from
+    pickup_agent = models.CharField(max_length=255, blank=True)
+    tracking_code = models.CharField(
+        max_length=100, blank=True, help_text="Courier/agent parcel code, shown to the customer."
+    )
 
     # Shipping address snapshot (kept even if the user later edits/deletes the saved Address)
     full_name = models.CharField(max_length=150)
     phone_number = models.CharField(max_length=20)
-    address_line1 = models.CharField(max_length=255)
+    address_line1 = models.CharField(max_length=255, blank=True)
     address_line2 = models.CharField(max_length=255, blank=True)
-    city = models.CharField(max_length=100)
+    city = models.CharField(max_length=100, blank=True)
     county_or_state = models.CharField(max_length=100, blank=True)
     postal_code = models.CharField(max_length=20, blank=True)
     country = models.CharField(max_length=100, default="Kenya")
@@ -83,11 +158,36 @@ class Order(TimeStampedModel):
     class Meta:
         ordering = ["-created_at"]
 
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._saved_status = self.status
+
     def __str__(self):
         return self.order_number
 
+    def save(self, *args, **kwargs):
+        is_new = self._state.adding
+        super().save(*args, **kwargs)
+        if is_new or self.status != self._saved_status:
+            OrderStatusEvent.objects.create(order=self, status=self.status)
+            if not is_new:
+                from .notifications import notify_status_change
+
+                notify_status_change(self)
+            self._saved_status = self.status
+
+    @property
+    def map_url(self):
+        if self.latitude is None or self.longitude is None:
+            return ""
+        return f"https://www.google.com/maps/search/?api=1&query={self.latitude},{self.longitude}"
+
     @property
     def shipping_address_text(self):
+        if self.delivery_method == DeliveryOption.Method.PICKUP:
+            return f"Collect from {self.delivery_option.address}" if self.delivery_option else "Store pickup"
+        if self.delivery_method == DeliveryOption.Method.AGENT:
+            return f"Collect from agent: {self.pickup_agent}"
         parts = [
             self.address_line1,
             self.address_line2,
@@ -96,7 +196,8 @@ class Order(TimeStampedModel):
             self.postal_code,
             self.country,
         ]
-        return ", ".join(p for p in parts if p)
+        text = ", ".join(p for p in parts if p)
+        return f"{text} (near {self.landmark})" if self.landmark else text
 
 
 class OrderItem(TimeStampedModel):
@@ -118,3 +219,17 @@ class OrderItem(TimeStampedModel):
     @property
     def line_total(self):
         return self.unit_price * self.quantity
+
+
+class OrderStatusEvent(models.Model):
+    """One entry in an order's timeline, recorded whenever its status changes."""
+
+    order = models.ForeignKey(Order, on_delete=models.CASCADE, related_name="status_events")
+    status = models.CharField(max_length=20, choices=Order.Status.choices)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["created_at", "id"]
+
+    def __str__(self):
+        return f"{self.order} → {self.status}"
