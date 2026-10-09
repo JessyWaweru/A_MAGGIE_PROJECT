@@ -3,14 +3,14 @@
   <h1 style="color: #3f5d3a; text-align: center; font-size: 22px; margin: 0 0 16px;">New paid consultation</h1>
   <p style="color: #4a4237; font-size: 15px; line-height: 1.6;">
     <strong>{{ consultation.reference }}</strong> with {{ consultation.expert.name }}<br>
-    Client: {{ consultation.user.get_full_name|default:consultation.user.email }} · {{ consultation.phone_number }}<br>
+    Client: {{ consultation.user.get_full_name|default:consultation.user.email }} · {{ consultation.user.email }}{% if consultation.phone_number %} · {{ consultation.phone_number }}{% endif %}<br>
     Session: {{ consultation.get_mode_display }}, {{ consultation.expert.session_minutes }} minutes<br>
     Preferred time: {{ consultation.preferred_time|date:"D j M Y, H:i" }}
   </p>
   <p style="color: #4a4237; font-size: 15px; line-height: 1.6;"><strong>Their concern</strong></p>
   <p style="color: #4a4237; font-size: 15px; line-height: 1.6; white-space: pre-line;">{{ consultation.concern }}</p>
   <p style="color: #8a7f6c; font-size: 12px; margin-top: 24px;">
-    Contact the client to confirm the time, then set the scheduled time (and video link, if any) on the booking in the admin.
+    Email the client to confirm the time, then set the scheduled time (and video link, if any) on the booking in the admin.
     This email contains health information — please don't forward it.
   </p>
 </div>

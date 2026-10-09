@@ -4,6 +4,7 @@ import hmac
 import json
 import time
 
+from django.core import mail
 from django.test import TestCase, override_settings
 from rest_framework.test import APIClient
 
@@ -110,3 +111,42 @@ class InboundEmailWebhookTests(TestCase):
     def test_missing_secret_returns_503(self):
         res = self.post_signed({"type": "email.received", "data": {}})
         self.assertEqual(res.status_code, 503)
+
+
+BOOKING_ALERT = {
+    "type": "email.received",
+    "data": {
+        "message_id": "m2",
+        "from": "customer@example.com",
+        "to": ["consultations@goherbal.health"],
+        "subject": "New paid consultation",
+        "text": "Please schedule",
+        "html": "<p>Please schedule</p>",
+    },
+}
+
+
+@override_settings(RESEND_INBOUND_WEBHOOK_SECRET=SECRET, INBOUND_FORWARD_TO="team@example.com")
+class InboundForwardingTests(TestCase):
+    setUp = InboundEmailWebhookTests.setUp
+    post_signed = InboundEmailWebhookTests.post_signed
+
+    def test_received_email_is_forwarded_with_reply_to_sender(self):
+        self.assertEqual(self.post_signed(BOOKING_ALERT).status_code, 200)
+        self.assertEqual(InboundEmail.objects.count(), 1)
+        forwarded = mail.outbox[0]
+        self.assertEqual(forwarded.to, ["team@example.com"])
+        self.assertEqual(forwarded.reply_to, ["customer@example.com"])
+        self.assertEqual(forwarded.subject, "New paid consultation")
+        self.assertIn("Please schedule", forwarded.body)
+
+    @override_settings(INBOUND_FORWARD_TO="inbox@goherbal.health")
+    def test_never_forwards_to_its_own_domain(self):
+        self.post_signed(BOOKING_ALERT)
+        self.assertEqual(len(mail.outbox), 0)
+
+    def test_forwarding_failure_still_acknowledges_and_keeps_email(self):
+        with override_settings(EMAIL_BACKEND="apps.core.email_backend.ResendEmailBackend", RESEND_API_KEY=""):
+            res = self.post_signed(BOOKING_ALERT)
+        self.assertEqual(res.status_code, 200)
+        self.assertEqual(InboundEmail.objects.count(), 1)

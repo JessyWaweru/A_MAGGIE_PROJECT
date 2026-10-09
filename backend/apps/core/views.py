@@ -5,6 +5,7 @@ from rest_framework import permissions, status
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from .forwarding import forward_inbound_email
 from .models import InboundEmail
 from .serializers import ContactMessageSerializer, NewsletterSubscriberSerializer
 from .webhooks import WebhookVerificationError, verify_svix_signature
@@ -73,7 +74,7 @@ class InboundEmailWebhookView(APIView):
         to_field = first_present("to", "to_address", "recipient", default="")
         to_address = to_field[0] if isinstance(to_field, list) else to_field
 
-        InboundEmail.objects.create(
+        inbound = InboundEmail.objects.create(
             message_id=first_present("message_id", "id", "email_id"),
             from_address=first_present("from", "from_address", "sender"),
             to_address=to_address,
@@ -82,4 +83,9 @@ class InboundEmailWebhookView(APIView):
             html_body=first_present("html", "html_body"),
             raw_payload=payload,
         )
+        try:
+            forward_inbound_email(inbound)
+        except Exception:
+            # Still acknowledge: the email is saved, and a retry from Resend would store it twice.
+            logger.exception("Could not forward inbound email %s", inbound.pk)
         return Response(status=status.HTTP_200_OK)

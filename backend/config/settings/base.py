@@ -208,6 +208,9 @@ RESEND_API_KEY = env("RESEND_API_KEY", default="")
 # Resend inbound-email webhook signing secret (from the Resend dashboard, starts "whsec_")
 RESEND_INBOUND_WEBHOOK_SECRET = env("RESEND_INBOUND_WEBHOOK_SECRET", default="")
 
+# Real inbox that every email received at @goherbal.health is forwarded to (must be on another domain)
+INBOUND_FORWARD_TO = env("INBOUND_FORWARD_TO", default="")
+
 # Paid consultation bookings are also emailed here so the team can schedule them (optional)
 CONSULTATIONS_TEAM_EMAIL = env("CONSULTATIONS_TEAM_EMAIL", default="")
 

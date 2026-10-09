@@ -39,7 +39,7 @@ class BookingTests(TestCase):
     def book(self, **overrides):
         payload = {
             "expert_id": str(self.expert.id),
-            "mode": "whatsapp",
+            "mode": "email",
             "preferred_time": (timezone.now() + timedelta(days=1)).isoformat(),
             "phone_number": "0712345678",
             "concern": "Trouble sleeping for three weeks.",
@@ -60,6 +60,10 @@ class BookingTests(TestCase):
 
     def test_mode_must_be_offered(self):
         self.assertEqual(self.book(mode="video").status_code, 400)
+
+    def test_phone_sessions_need_a_number(self):
+        self.assertEqual(self.book(mode="phone", phone_number="").status_code, 400)
+        self.assertEqual(self.book(mode="email", phone_number="").status_code, 201)
 
     def test_time_must_be_in_the_future(self):
         self.assertEqual(self.book(preferred_time=timezone.now().isoformat()).status_code, 400)
@@ -106,4 +110,4 @@ class ExpertTests(TestCase):
         body = APIClient().get("/api/consultations/experts/").json()
         self.assertEqual(len(body), 1)
         self.assertNotIn("email", body[0])
-        self.assertEqual(body[0]["modes"], ["whatsapp", "phone"])
+        self.assertEqual(body[0]["modes"], ["email", "phone"])

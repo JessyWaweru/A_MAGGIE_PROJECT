@@ -61,7 +61,7 @@ class BookConsultationSerializer(serializers.Serializer):
     expert_id = serializers.PrimaryKeyRelatedField(queryset=Expert.objects.filter(is_active=True))
     mode = serializers.ChoiceField(choices=Mode.choices)
     preferred_time = serializers.DateTimeField()
-    phone_number = serializers.CharField(min_length=7, max_length=20)
+    phone_number = serializers.CharField(max_length=20, required=False, allow_blank=True)
     concern = serializers.CharField(min_length=10, max_length=4000)
     consent = serializers.BooleanField()
 
@@ -78,4 +78,6 @@ class BookConsultationSerializer(serializers.Serializer):
     def validate(self, attrs):
         if attrs["mode"] not in attrs["expert_id"].modes:
             raise serializers.ValidationError({"mode": "This expert doesn't offer that type of session."})
+        if attrs["mode"] == Mode.PHONE and len(attrs.get("phone_number", "").strip()) < 7:
+            raise serializers.ValidationError({"phone_number": "Enter the number the expert should call."})
         return attrs

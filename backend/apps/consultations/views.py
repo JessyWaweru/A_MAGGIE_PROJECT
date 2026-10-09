@@ -44,7 +44,7 @@ class ConsultationViewSet(
             expert=expert,
             mode=data["mode"],
             preferred_time=data["preferred_time"],
-            phone_number=data["phone_number"],
+            phone_number=data.get("phone_number", "").strip(),
             concern=data["concern"],
             consent_given_at=timezone.now(),
             fee=expert.fee,

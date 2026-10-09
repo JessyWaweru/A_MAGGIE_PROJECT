@@ -78,6 +78,13 @@ HTTPS API instead (`apps.core.email_backend.ResendEmailBackend`): set
 `DEFAULT_FROM_EMAIL` must be verified in Resend. SMTP won't work on Render's
 free tier, which blocks outbound SMTP ports.
 
+## Receiving email
+
+Mail to any `@goherbal.health` address reaches `/api/webhooks/inbound-email/` through Resend
+inbound. It's saved in the admin (**Core → Inbound emails**) and forwarded to
+`INBOUND_FORWARD_TO`, with Reply going to the original sender. The forwarding address must be on
+another domain, because forwarding to `@goherbal.health` would loop back through the webhook.
+
 ## Delivery
 
 Delivery options and fees are edited in the admin (**Orders → Delivery options**); a
@@ -97,7 +104,8 @@ in Google Maps.
 ## Consultations
 
 Experts are added in the admin (**Consultations → Experts**). Medical specialists need a
-licence number. Customers book with a preferred time and their concern, and the booking is
+licence number. Sessions are by email, phone or video; all arranging happens by email.
+Customers book with a preferred time and their concern, and the booking is
 confirmed once Paystack payment succeeds. The customer, the expert's private email and
 `CONSULTATIONS_TEAM_EMAIL` (optional) are then emailed. Staff set the confirmed time and any
 video link on the booking. A booking's concern is health information, so only the customer,

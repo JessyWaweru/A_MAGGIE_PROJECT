@@ -3,14 +3,14 @@
   <h1 style="color: #3f5d3a; text-align: center; font-size: 22px; margin: 0 0 16px;">Your consultation is booked</h1>
   <p style="color: #4a4237; font-size: 15px; line-height: 1.6;">Hi {{ consultation.user.first_name|default:consultation.user.email }},</p>
   <p style="color: #4a4237; font-size: 15px; line-height: 1.6;">
-    Thank you — your payment is confirmed. {{ consultation.expert.name }} ({{ consultation.expert.title }}) will
-    contact you on <strong>{{ consultation.phone_number }}</strong> to confirm the exact time of your
-    {{ consultation.get_mode_display|lower }}.
+    Thank you — your booking is confirmed. {{ consultation.expert.name }} ({{ consultation.expert.title }}) will
+    email you at <strong>{{ consultation.user.email }}</strong> to confirm the exact time of your
+    {{ consultation.get_mode_display|lower }}{% if consultation.mode == "video" %}, with the link to join{% endif %}.
   </p>
   <p style="color: #4a4237; font-size: 15px; line-height: 1.6;">
     Booking <strong>{{ consultation.reference }}</strong><br>
     Preferred time: {{ consultation.preferred_time|date:"D j M Y, H:i" }}<br>
-    Paid: {{ consultation.currency }} {{ consultation.fee }}
+    {% if consultation.fee %}Paid: {{ consultation.currency }} {{ consultation.fee }}{% else %}Free session{% endif %}
   </p>
   <p style="text-align: center; margin: 28px 0 8px;">
     <a href="{{ FRONTEND_URL }}/consultations/{{ consultation.reference }}" style="display: inline-block; background: #587649; color: #fffdf8; text-decoration: none; padding: 12px 28px; border-radius: 999px; font-family: Arial, sans-serif; font-size: 14px; font-weight: bold;">View your booking</a>

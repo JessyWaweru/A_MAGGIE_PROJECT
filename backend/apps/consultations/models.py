@@ -13,7 +13,7 @@ def generate_consultation_reference():
 
 
 class Mode(models.TextChoices):
-    WHATSAPP = "whatsapp", "WhatsApp chat"
+    EMAIL = "email", "Email consultation"
     PHONE = "phone", "Phone call"
     VIDEO = "video", "Video call"
 
@@ -40,7 +40,7 @@ class Expert(TimeStampedModel):
     fee = models.DecimalField(max_digits=10, decimal_places=2, validators=[MinValueValidator(0)])
     currency = models.CharField(max_length=3, default="KES")
     session_minutes = models.PositiveIntegerField(default=30)
-    offers_whatsapp = models.BooleanField(default=True)
+    offers_email = models.BooleanField(default=True)
     offers_phone = models.BooleanField(default=True)
     offers_video = models.BooleanField(default=False)
     email = models.EmailField(blank=True, help_text="Private. New paid bookings are emailed here.")
@@ -57,11 +57,11 @@ class Expert(TimeStampedModel):
         if self.kind == self.Kind.MEDICAL_SPECIALIST and not self.licence_number.strip():
             raise ValidationError({"licence_number": "Medical specialists must have a licence number."})
         if not self.modes:
-            raise ValidationError("Offer at least one way to consult (WhatsApp, phone or video).")
+            raise ValidationError("Offer at least one way to consult (email, phone or video).")
 
     @property
     def modes(self):
-        offered = [(Mode.WHATSAPP, self.offers_whatsapp), (Mode.PHONE, self.offers_phone), (Mode.VIDEO, self.offers_video)]
+        offered = [(Mode.EMAIL, self.offers_email), (Mode.PHONE, self.offers_phone), (Mode.VIDEO, self.offers_video)]
         return [mode.value for mode, on in offered if on]
 
 
@@ -85,7 +85,7 @@ class Consultation(TimeStampedModel):
     status = models.CharField(max_length=20, choices=Status.choices, default=Status.PENDING_PAYMENT)
     mode = models.CharField(max_length=10, choices=Mode.choices)
     preferred_time = models.DateTimeField()
-    phone_number = models.CharField(max_length=20)
+    phone_number = models.CharField(max_length=20, blank=True, help_text="Needed for phone sessions.")
     # Health information is sensitive personal data (Kenya Data Protection Act, 2019): collected
     # only with explicit consent and shown only to the customer, the assigned expert and admins.
     concern = models.TextField()
