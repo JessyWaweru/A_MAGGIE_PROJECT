@@ -123,3 +123,23 @@ class OrderTimelineTests(TestCase):
                 self.order.save()
         self.order.refresh_from_db()
         self.assertEqual(self.order.status, Order.Status.DELIVERED)
+
+
+class RiderMessageTests(TestCase):
+    def test_message_has_contact_address_directions_and_pin(self):
+        from django.utils import timezone
+
+        user = User.objects.create_user(email="njeri@example.com", password="x")
+        order = Order.objects.create(
+            user=user, full_name="Njeri W", phone_number="+254712345678", address_line1="Riverside Dr",
+            address_line2="Kileleshwa", city="Nairobi", landmark="Blue gate", latitude=Decimal("-1.27"),
+            longitude=Decimal("36.79"), delivery_method="rider", paid_at=timezone.now(),
+        )
+        message = order.rider_message
+        for expected in ["Njeri W — +254712345678", "Riverside Dr, Kileleshwa, Nairobi", "Directions: Blue gate",
+                         "maps/search/?api=1&query=-1.27", "nothing to collect"]:
+            self.assertIn(expected, message)
+
+    def test_only_for_rider_orders(self):
+        user = User.objects.create_user(email="otieno2@example.com", password="x")
+        self.assertEqual(Order.objects.create(user=user, delivery_method="pickup").rider_message, "")

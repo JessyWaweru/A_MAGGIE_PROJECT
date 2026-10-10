@@ -177,6 +177,24 @@ class Order(TimeStampedModel):
             self._saved_status = self.status
 
     @property
+    def rider_message(self):
+        """Everything a rider needs, ready to paste into WhatsApp or SMS."""
+        if self.delivery_method != DeliveryOption.Method.RIDER:
+            return ""
+        lines = [
+            f"GOherbal delivery #{self.order_number}",
+            f"Customer: {self.full_name} — {self.phone_number}",
+            "Address: " + ", ".join(p for p in [self.address_line1, self.address_line2, self.city] if p),
+        ]
+        if self.landmark:
+            lines.append(f"Directions: {self.landmark}")
+        if self.map_url:
+            lines.append(f"Pin: {self.map_url}")
+        lines.append("Already paid, nothing to collect." if self.paid_at else "NOT PAID YET, don't deliver.")
+        lines.append("Please call the customer before you arrive.")
+        return "\n".join(lines)
+
+    @property
     def map_url(self):
         if self.latitude is None or self.longitude is None:
             return ""

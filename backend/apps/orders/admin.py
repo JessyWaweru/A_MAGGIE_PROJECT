@@ -42,6 +42,7 @@ class OrderAdmin(admin.ModelAdmin):
         "delivery_method",
         "delivery_option_name",
         "open_in_maps",
+        "message_for_rider",
     ]
     fieldsets = [
         (None, {"fields": ["order_number", "user", "status", "paid_at", "customer_notes"]}),
@@ -59,6 +60,7 @@ class OrderAdmin(admin.ModelAdmin):
                     "county_or_state",
                     "landmark",
                     "open_in_maps",
+                    "message_for_rider",
                     "pickup_agent",
                     "tracking_code",
                 ]
@@ -74,6 +76,16 @@ class OrderAdmin(admin.ModelAdmin):
             return "—"
         return format_html('<a href="{}" target="_blank" rel="noopener">Open in Google Maps ↗</a>', obj.map_url)
 
+    @admin.display(description="Message for the rider")
+    def message_for_rider(self, obj):
+        if not obj.rider_message:
+            return "—"
+        return format_html(
+            '<textarea readonly rows="8" cols="60" onclick="this.select()" style="font-family: monospace;">{}</textarea>'
+            "<br><small>Click to select, then copy and send to the rider.</small>",
+            obj.rider_message,
+        )
+
 
 class CartItemInline(admin.TabularInline):
     model = CartItem
@@ -85,3 +97,4 @@ class CartAdmin(admin.ModelAdmin):
     list_display = ["user", "total_items", "updated_at"]
     search_fields = ["user__email"]
     inlines = [CartItemInline]
+
