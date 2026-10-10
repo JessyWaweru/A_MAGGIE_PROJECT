@@ -234,6 +234,27 @@ class RiderDispatchTests(TestCase):
         self.assertEqual(self.client_class().post(url + "picked-up/").status_code, 409)
         self.assertEqual(self.client_class().get("/api/orders/rider/not-a-real-token-at-all-xx/").status_code, 404)
 
+    def test_manual_mode_assigns_without_texting_and_message_carries_the_link(self):
+        with self.settings(SMS_BACKEND="manual"):
+            order, notices = self.assign_in_admin(self.rider)
+        self.assertEqual(self.sms, [])
+        self.assertIn("Send them the “Message for the rider”", notices[0])
+        self.assertIn(f"https://goherbal.health/r/{order.rider_token}", order.rider_message)
+
+        from django.contrib.admin.sites import site
+
+        html = site._registry[Order].message_for_rider(order)
+        self.assertIn("https://wa.me/254700111222?text=", html)
+        self.assertIn("sms:+254700111222?body=", html)
+
+    def test_admin_order_page_shows_link_and_send_buttons(self):
+        with self.settings(SMS_BACKEND="manual"):
+            order, _ = self.assign_in_admin(self.rider)
+            page = self.client.get(f"/admin/orders/order/{order.pk}/change/")
+        self.assertEqual(page.status_code, 200)
+        self.assertContains(page, f"https://goherbal.health/r/{order.rider_token}")
+        self.assertContains(page, "Open in WhatsApp")
+
     def test_failed_sms_is_reported_to_staff(self):
         with self.settings(SMS_BACKEND="africastalking", AFRICASTALKING_API_KEY=""):
             _, notices = self.assign_in_admin(self.rider)

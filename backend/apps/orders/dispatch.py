@@ -5,6 +5,10 @@ from django.conf import settings
 from apps.core.sms import send_sms
 
 
+def texts_automatically() -> bool:
+    return settings.SMS_BACKEND != "manual"
+
+
 def rider_link(order) -> str:
     return f"{settings.FRONTEND_URL}/r/{order.rider_token}"
 

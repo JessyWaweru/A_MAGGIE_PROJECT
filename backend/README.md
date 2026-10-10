@@ -104,8 +104,10 @@ in Google Maps.
 ### Riders
 
 Riders are added in the admin (**Orders → Riders**) and don't need an account. Choosing a rider
-on a paid rider-delivery order texts them a private link through Africa's Talking
-(`AFRICASTALKING_*` settings). The link opens a phone page with the customer, address, directions,
+on a paid rider-delivery order creates a private link for them. With `AFRICASTALKING_API_KEY` set,
+the link is texted automatically. Without it (`SMS_BACKEND=manual`, the production default),
+staff send the order's **Message for the rider**, which includes the link, using the Copy,
+WhatsApp or SMS buttons under it. The link opens a phone page with the customer, address, directions,
 a Navigate button and **Picked up** / **Delivered** buttons. The buttons move the order along, so
 the timeline updates and the customer is emailed, including the rider's name and number. A link
 stops working when the order is given to another rider or is delivered. If the SMS fails, the

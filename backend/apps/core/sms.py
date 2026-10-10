@@ -3,6 +3,7 @@
 SMS_BACKEND picks where messages go:
 - "console" (default, local development): logged, nothing is sent;
 - "locmem" (tests): appended to `outbox`;
+- "manual" (production without a key): nothing is sent; staff send rider messages themselves;
 - "africastalking" (production): sent for real. Needs AFRICASTALKING_USERNAME and
   AFRICASTALKING_API_KEY; use username "sandbox" with a sandbox key to test for free.
 """
@@ -31,6 +32,8 @@ def send_sms(to: str, message: str):
     if backend == "locmem":
         outbox.append({"to": to, "message": message})
         return
+    if backend == "manual":
+        raise SMSError("Automatic SMS is off (SMS_BACKEND=manual).")
     if backend == "console":
         logger.info("SMS to %s: %s", to, message)
         return

@@ -252,6 +252,10 @@ class Order(TimeStampedModel):
         if self.map_url:
             lines.append(f"Pin: {self.map_url}")
         lines.append("Already paid, nothing to collect." if self.paid_at else "NOT PAID YET, don't deliver.")
+        if self.rider_token:
+            from .dispatch import rider_link
+
+            lines.append(f"Tap Picked up / Delivered here: {rider_link(self)}")
         lines.append("Please call the customer before you arrive.")
         return "\n".join(lines)
 

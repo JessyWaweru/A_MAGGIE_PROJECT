@@ -1,9 +1,11 @@
+from urllib.parse import quote
+
 from django.contrib import admin, messages
 from django.utils.html import format_html
 
 from apps.core.sms import SMSError
 
-from .dispatch import text_rider
+from .dispatch import rider_link, text_rider, texts_automatically
 from .models import Cart, CartItem, DeliveryOption, Order, OrderItem, OrderStatusEvent, Rider
 
 
@@ -92,8 +94,15 @@ class OrderAdmin(admin.ModelAdmin):
     def save_model(self, request, obj, form, change):
         newly_assigned = obj.rider_changed and obj.rider_id
         super().save_model(request, obj, form, change)
-        if newly_assigned:
+        if newly_assigned and texts_automatically():
             self._text_rider(request, obj)
+        elif newly_assigned:
+            self.message_user(
+                request,
+                f"{obj.order_number}: assigned to {obj.rider.name}. Send them the “Message for the rider” "
+                "from this order (WhatsApp or SMS buttons below it).",
+                messages.INFO,
+            )
 
     def _text_rider(self, request, order):
         try:
@@ -110,6 +119,13 @@ class OrderAdmin(admin.ModelAdmin):
 
     @admin.action(description="Resend delivery link to the assigned rider")
     def resend_rider_link(self, request, queryset):
+        if not texts_automatically():
+            self.message_user(
+                request,
+                "Automatic SMS is off. Open the order and send the “Message for the rider” yourself.",
+                messages.WARNING,
+            )
+            return
         for order in queryset.select_related("rider"):
             if order.rider_id and order.rider_token:
                 self._text_rider(request, order)
@@ -119,7 +135,13 @@ class OrderAdmin(admin.ModelAdmin):
     @admin.display(description="Rider link")
     def rider_link_status(self, obj):
         if obj.rider_token:
-            return f"Active, texted {obj.rider_assigned_at:%d %b %H:%M}" if obj.rider_assigned_at else "Active"
+            link = rider_link(obj)
+            return format_html(
+                '<a href="{}" target="_blank" rel="noopener">{}</a><br><small>Assigned {}. Included in the message below.</small>',
+                link,
+                link,
+                f"{obj.rider_assigned_at:%d %b %H:%M}" if obj.rider_assigned_at else "",
+            )
         if obj.rider_id:
             return "Closed (delivery finished)"
         return "—"
@@ -134,10 +156,24 @@ class OrderAdmin(admin.ModelAdmin):
     def message_for_rider(self, obj):
         if not obj.rider_message:
             return "—"
+        text = obj.rider_message
+        phone = obj.rider.phone_number.lstrip("+") if obj.rider else ""
+        whatsapp = f"https://wa.me/{phone}?text={quote(text)}" if phone else f"https://wa.me/?text={quote(text)}"
+        sms = f"sms:{'+' + phone if phone else ''}?body={quote(text)}"
+        hint = "" if obj.rider else " Choose a rider above and save first, so the message includes their link."
         return format_html(
-            '<textarea readonly rows="8" cols="60" onclick="this.select()" style="font-family: monospace;">{}</textarea>'
-            "<br><small>Click to select, then copy and send to the rider.</small>",
-            obj.rider_message,
+            '<textarea id="rider-message" readonly rows="10" cols="64" onclick="this.select()" '
+            'style="font-family: monospace;">{}</textarea><br>'
+            '<button type="button" class="button" onclick="navigator.clipboard.writeText('
+            "document.getElementById('rider-message').value).then(() => this.textContent = 'Copied ✓')\">Copy</button> "
+            '<a class="button" href="{}" target="_blank" rel="noopener">Open in WhatsApp</a> '
+            '<a class="button" href="{}">Open in SMS app</a>'
+            "<br><small>{}{}</small>",
+            text,
+            whatsapp,
+            sms,
+            f"Sends to {obj.rider.name}." if obj.rider else "",
+            hint,
         )
 
 

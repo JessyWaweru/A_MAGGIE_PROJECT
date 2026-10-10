@@ -14,8 +14,9 @@ if RENDER_EXTERNAL_HOSTNAME:
 # console default in base.py would silently swallow every email.
 EMAIL_BACKEND = env("EMAIL_BACKEND", default="apps.core.email_backend.ResendEmailBackend")
 
-# Riders get their delivery links by SMS for real in production.
-SMS_BACKEND = env("SMS_BACKEND", default="africastalking")
+# With an Africa's Talking key, riders are texted automatically; without one, staff send
+# the rider message themselves from the order page ("manual").
+SMS_BACKEND = env("SMS_BACKEND", default="africastalking" if env("AFRICASTALKING_API_KEY", default="") else "manual")
 
 STORAGES = {
     "default": {"BACKEND": "django.core.files.storage.FileSystemStorage"},
