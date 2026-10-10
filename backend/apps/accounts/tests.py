@@ -11,7 +11,7 @@ from django.utils import timezone
 from rest_framework.test import APIClient
 
 from .cookies import ACCESS_COOKIE, REFRESH_COOKIE
-from .models import EmailVerificationCode, User
+from .models import Address, EmailVerificationCode, User
 
 STRONG = "Fern&Moss42"
 FAST_HASHER = override_settings(PASSWORD_HASHERS=["django.contrib.auth.hashers.MD5PasswordHasher"])
@@ -434,3 +434,81 @@ class ProfilePhoneTests(TestCase):
         self.assertEqual(self.client.patch("/api/auth/me/", {"phone_number": ""}, format="json").status_code, 400)
         # Name-only edits still work for older accounts that never gave a number.
         self.assertEqual(self.client.patch("/api/auth/me/", {"first_name": "Wanjiru"}, format="json").status_code, 200)
+
+
+@FAST_HASHER
+class DeleteAccountTests(TestCase):
+    def setUp(self):
+        from apps.core.models import NewsletterSubscriber
+        from apps.orders.models import Order
+        from apps.products.models import Product, Review
+
+        cache.clear()
+        self.user = User.objects.create_user(
+            "akinyi@example.com", STRONG, first_name="Akinyi", phone_number="+254712345678", is_email_verified=True
+        )
+        self.client = APIClient()
+        self.client.force_authenticate(self.user)
+        Address.objects.create(user=self.user, full_name="Akinyi", phone_number="0712", address_line1="Ngong Rd", city="Nairobi")
+        product = Product.objects.create(name="Neem Balm", price=300)
+        Review.objects.create(user=self.user, product=product, rating=5, title="Lovely", comment="Great")
+        NewsletterSubscriber.objects.create(email="akinyi@example.com")
+        self.delivered = Order.objects.create(
+            user=self.user, full_name="Akinyi O", phone_number="+254712345678", address_line1="Ngong Rd", city="Nairobi",
+            landmark="Blue gate", subtotal=300, total_amount=300, status=Order.Status.DELIVERED,
+        )
+
+    def delete(self, password=STRONG, confirm="DELETE"):
+        return self.client.post("/api/auth/delete-account/", {"password": password, "confirm": confirm}, format="json")
+
+    def test_deletes_the_person_but_keeps_the_sale(self):
+        from apps.orders.models import Order
+
+        with self.captureOnCommitCallbacks(execute=True):
+            res = self.delete()
+        self.assertEqual(res.status_code, 200, res.content)
+
+        self.user.refresh_from_db()
+        self.assertFalse(self.user.is_active)
+        self.assertFalse(self.user.has_usable_password())
+        self.assertTrue(self.user.email.endswith("@deleted.invalid"))
+        self.assertEqual((self.user.first_name, self.user.phone_number), ("", ""))
+        self.assertFalse(self.user.addresses.exists())
+        self.assertFalse(self.user.reviews.exists())
+
+        order = Order.objects.get(pk=self.delivered.pk)
+        self.assertEqual(order.total_amount, 300)  # the sale survives...
+        self.assertEqual((order.full_name, order.phone_number, order.address_line1, order.landmark), ("Deleted customer", "", "", ""))
+
+        self.assertEqual(mail.outbox[-1].to, ["akinyi@example.com"])
+        self.assertIn("deleted", mail.outbox[-1].subject)
+
+    def test_email_is_free_to_sign_up_again_and_old_login_fails(self):
+        self.delete()
+        anon = APIClient()
+        self.assertEqual(anon.post("/api/auth/login/", {"email": "akinyi@example.com", "password": STRONG}, format="json").status_code, 401)
+        self.assertFalse(User.objects.filter(email__iexact="akinyi@example.com").exists())
+
+    def test_needs_password_and_typed_confirmation(self):
+        self.assertEqual(self.delete(password="Wrong&Pass1").status_code, 400)
+        self.assertEqual(self.delete(confirm="yes").status_code, 400)
+        self.user.refresh_from_db()
+        self.assertTrue(self.user.is_active)
+
+    def test_blocked_while_an_order_is_on_its_way(self):
+        from apps.orders.models import Order
+
+        Order.objects.create(user=self.user, full_name="A", phone_number="1", subtotal=1, total_amount=1, status=Order.Status.OUT_FOR_DELIVERY)
+        self.assertEqual(self.client.get("/api/auth/delete-account/").json()["blockers"], ["1 order still on its way"])
+        res = self.delete()
+        self.assertEqual(res.status_code, 409)
+        self.user.refresh_from_db()
+        self.assertTrue(self.user.is_active)
+
+    def test_unpaid_orders_are_cancelled(self):
+        from apps.orders.models import Order
+
+        pending = Order.objects.create(user=self.user, full_name="A", phone_number="1", subtotal=1, total_amount=1)
+        self.delete()
+        pending.refresh_from_db()
+        self.assertEqual(pending.status, Order.Status.CANCELLED)

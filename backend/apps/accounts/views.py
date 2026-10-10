@@ -19,6 +19,8 @@ from rest_framework_simplejwt.tokens import RefreshToken
 
 from .cookies import REFRESH_COOKIE, clear_auth_cookies, enforce_csrf, set_auth_cookies
 
+from .deletion import blockers as deletion_blockers
+from .deletion import delete_account
 from .emails import (
     send_email_change_code,
     send_email_changed_alert,
@@ -44,6 +46,7 @@ from .serializers import (
     AddressSerializer,
     ChangePasswordSerializer,
     ConfirmEmailChangeSerializer,
+    DeleteAccountSerializer,
     LoginSerializer,
     PasswordResetConfirmSerializer,
     PasswordResetRequestSerializer,
@@ -475,6 +478,41 @@ class RevertEmailChangeView(APIView):
                 "We've sent you a link to set a new password."
             }
         )
+
+
+class DeleteAccountView(APIView):
+    """GET says whether the account can be deleted now; POST deletes it (password + typing DELETE)."""
+
+    permission_classes = [permissions.IsAuthenticated]
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = "sensitive"
+
+    def get(self, request):
+        return Response({"blockers": deletion_blockers(request.user)})
+
+    @transaction.atomic
+    def post(self, request):
+        serializer = DeleteAccountSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        user = request.user
+        check = check_current_password(user, serializer.validated_data["password"])
+        if check is PasswordCheck.LOCKED:
+            return _locked_out()
+        if check is PasswordCheck.WRONG:
+            return _wrong_password()
+
+        reasons = deletion_blockers(user)
+        if reasons:
+            return Response(
+                {
+                    "detail": f"You can delete your account once these are finished: {'; '.join(reasons)}.",
+                    "code": "has_active_items",
+                },
+                status=status.HTTP_409_CONFLICT,
+            )
+
+        delete_account(user)
+        return clear_auth_cookies(Response({"detail": "Your account has been deleted."}))
 
 
 class MeView(generics.RetrieveUpdateAPIView):

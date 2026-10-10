@@ -165,6 +165,16 @@ class ConfirmEmailChangeSerializer(serializers.Serializer):
     code = serializers.RegexField(r"^\s*\d{6}\s*$", error_messages={"invalid": "Enter the 6-digit code."})
 
 
+class DeleteAccountSerializer(serializers.Serializer):
+    password = serializers.CharField(trim_whitespace=False)
+    confirm = serializers.CharField()
+
+    def validate_confirm(self, value):
+        if value.strip().upper() != "DELETE":
+            raise serializers.ValidationError("Type DELETE to confirm.")
+        return value
+
+
 class RevertEmailChangeSerializer(serializers.Serializer):
     token = serializers.CharField()
 

@@ -8,6 +8,7 @@ from .views import (
     ConfirmEmailChangeView,
     CookieTokenRefreshView,
     CsrfTokenView,
+    DeleteAccountView,
     LoginView,
     LogoutView,
     MeView,
@@ -38,5 +39,6 @@ urlpatterns = [
     path("change-email/confirm/", ConfirmEmailChangeView.as_view(), name="auth-change-email-confirm"),
     path("change-email/revert/", RevertEmailChangeView.as_view(), name="auth-change-email-revert"),
     path("me/", MeView.as_view(), name="auth-me"),
+    path("delete-account/", DeleteAccountView.as_view(), name="auth-delete-account"),
     path("", include(router.urls)),
 ]

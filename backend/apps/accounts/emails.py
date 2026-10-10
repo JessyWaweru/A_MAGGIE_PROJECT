@@ -125,3 +125,12 @@ def send_password_changed_alert(user):
         context={"user": user, "reset_link": f"{settings.FRONTEND_URL}/forgot-password"},
         to_email=user.email,
     )
+
+
+def send_account_deleted_email(email, first_name):
+    _send(
+        subject="Your GOherbal account has been deleted",
+        template_name="account_deleted",
+        context={"first_name": first_name},
+        to_email=email,
+    )
