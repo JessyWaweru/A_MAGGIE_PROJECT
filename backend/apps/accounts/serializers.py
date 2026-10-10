@@ -6,6 +6,14 @@ from django.utils.http import urlsafe_base64_decode
 from rest_framework import serializers
 
 from .models import Address, User
+from .validators import normalize_phone
+
+
+def validate_phone(value):
+    try:
+        return normalize_phone(value)
+    except DjangoValidationError as exc:
+        raise serializers.ValidationError(exc.messages)
 
 
 class UserSerializer(serializers.ModelSerializer):
@@ -22,11 +30,17 @@ class UserSerializer(serializers.ModelSerializer):
             "date_joined",
         ]
         read_only_fields = ["id", "email", "is_email_verified", "date_joined"]
+        # Required at sign-up, so the profile can't clear it either.
+        extra_kwargs = {"phone_number": {"allow_blank": False}}
+
+    def validate_phone_number(self, value):
+        return validate_phone(value)
 
 
 class RegisterSerializer(serializers.ModelSerializer):
     password = serializers.CharField(write_only=True, max_length=128, trim_whitespace=False)
     first_name = serializers.CharField(max_length=150)
+    phone_number = serializers.CharField(max_length=20)
 
     class Meta:
         model = User
@@ -48,6 +62,9 @@ class RegisterSerializer(serializers.ModelSerializer):
         if not value:
             raise serializers.ValidationError("Enter your first name.")
         return value
+
+    def validate_phone_number(self, value):
+        return validate_phone(value)
 
     def validate(self, attrs):
         # Validate against the user's own details so "Jessy2024!" style passwords are caught.

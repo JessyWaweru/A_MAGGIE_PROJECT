@@ -31,8 +31,14 @@ class SignUpFlowTests(TestCase):
         self.client = APIClient()
 
     def register(self, **overrides):
-        payload = {"email": "Ama@Example.com", "password": STRONG, "first_name": "Ama", **overrides}
+        payload = {"email": "Ama@Example.com", "password": STRONG, "first_name": "Ama", "phone_number": "0712 345 678", **overrides}
         return self.client.post("/api/auth/register/", payload, format="json")
+
+    def test_phone_is_required_and_normalized(self):
+        self.assertIn("phone_number", self.register(phone_number="").json())
+        self.assertIn("phone_number", self.register(phone_number="12345").json())
+        self.assertEqual(self.register().status_code, 201)
+        self.assertEqual(User.objects.get().phone_number, "+254712345678")
 
     def test_register_sends_code_and_issues_no_session(self):
         res = self.register()
@@ -396,3 +402,35 @@ class AccountSecurityTests(TestCase):
         self.phone.patch("/api/auth/me/", {"email": "sneaky@example.com"}, format="json", HTTP_X_CSRFTOKEN=token)
         self.user.refresh_from_db()
         self.assertEqual(self.user.email, "kofi@example.com")
+
+
+class PhoneNormalizationTests(TestCase):
+    def test_kenyan_formats(self):
+        from .validators import normalize_phone
+
+        for raw in ["0712345678", "0712 345 678", "712345678", "254712345678", "+254 712-345-678", "(0712) 345678"]:
+            self.assertEqual(normalize_phone(raw), "+254712345678", raw)
+        self.assertEqual(normalize_phone("0110 123 456"), "+254110123456")
+        self.assertEqual(normalize_phone("+44 7911 123456"), "+447911123456")
+
+    def test_rejects_junk(self):
+        from django.core.exceptions import ValidationError
+
+        from .validators import normalize_phone
+
+        for raw in ["", "12345", "0612345678", "07123456789", "phone"]:
+            with self.assertRaises(ValidationError, msg=raw):
+                normalize_phone(raw)
+
+
+@FAST_HASHER
+class ProfilePhoneTests(TestCase):
+    def setUp(self):
+        self.client = APIClient()
+        self.client.force_authenticate(User.objects.create_user("wanjiru@example.com", STRONG))
+
+    def test_profile_phone_is_normalized_and_cannot_be_cleared(self):
+        self.assertEqual(self.client.patch("/api/auth/me/", {"phone_number": "0722 000 111"}, format="json").json()["phone_number"], "+254722000111")
+        self.assertEqual(self.client.patch("/api/auth/me/", {"phone_number": ""}, format="json").status_code, 400)
+        # Name-only edits still work for older accounts that never gave a number.
+        self.assertEqual(self.client.patch("/api/auth/me/", {"first_name": "Wanjiru"}, format="json").status_code, 200)
