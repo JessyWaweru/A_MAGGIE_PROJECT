@@ -1,9 +1,11 @@
 from decimal import Decimal
 
 from django.db import transaction
+from django.http import Http404
 from django.shortcuts import get_object_or_404
 from rest_framework import generics, permissions, status, viewsets
 from rest_framework.response import Response
+from rest_framework.throttling import ScopedRateThrottle
 from rest_framework.views import APIView
 
 from .models import Cart, CartItem, DeliveryOption, Order, OrderItem, rider_zone_for
@@ -14,6 +16,7 @@ from .serializers import (
     DeliveryOptionSerializer,
     DeliveryQuoteSerializer,
     OrderSerializer,
+    RiderDeliverySerializer,
     UpdateCartItemSerializer,
 )
 
@@ -151,6 +154,57 @@ class DeliveryQuoteView(APIView):
                 "option": DeliveryOptionSerializer(zone).data if zone else None,
             }
         )
+
+
+class RiderDeliveryView(APIView):
+    """The rider's private link. The token in the URL is the only credential, and it dies when
+    the order is reassigned or finished. Riders can only move an order forward."""
+
+    permission_classes = [permissions.AllowAny]
+    authentication_classes = []
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = "rider_link"
+
+    # action → (statuses it's allowed from, status it moves to)
+    ACTIONS = {
+        "picked-up": ({Order.Status.PAID, Order.Status.PROCESSING}, Order.Status.OUT_FOR_DELIVERY),
+        "delivered": (
+            {Order.Status.PAID, Order.Status.PROCESSING, Order.Status.OUT_FOR_DELIVERY},
+            Order.Status.DELIVERED,
+        ),
+    }
+
+    @staticmethod
+    def get_order(token, lock=False):
+        if len(token) < 20:
+            raise Http404
+        queryset = Order.objects.select_related("rider").prefetch_related("items")
+        if lock:
+            queryset = queryset.select_for_update()
+        order = queryset.filter(rider_token=token, rider__isnull=False).first()
+        if order is None:
+            raise Http404
+        return order
+
+    def get(self, request, token):
+        return Response(RiderDeliverySerializer(self.get_order(token)).data)
+
+    @transaction.atomic
+    def post(self, request, token, action):
+        if action not in self.ACTIONS:
+            raise Http404
+        order = self.get_order(token, lock=True)
+        allowed_from, new_status = self.ACTIONS[action]
+        if order.status not in allowed_from:
+            return Response(
+                {"detail": f"This order is already {order.get_status_display().lower()}."},
+                status=status.HTTP_409_CONFLICT,
+            )
+        data = RiderDeliverySerializer(order).data
+        order.status = new_status
+        order.save()  # records the timeline step and emails the customer
+        data["status"] = new_status
+        return Response(data)
 
 
 class OrderViewSet(viewsets.ReadOnlyModelViewSet):

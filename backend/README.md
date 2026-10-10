@@ -101,6 +101,16 @@ timeline, and the customer is emailed for ready-for-pickup, out-for-delivery,
 sent-to-agent and delivered. Order pages in the admin link riders to the customer's pin
 in Google Maps.
 
+### Riders
+
+Riders are added in the admin (**Orders → Riders**) and don't need an account. Choosing a rider
+on a paid rider-delivery order texts them a private link through Africa's Talking
+(`AFRICASTALKING_*` settings). The link opens a phone page with the customer, address, directions,
+a Navigate button and **Picked up** / **Delivered** buttons. The buttons move the order along, so
+the timeline updates and the customer is emailed, including the rider's name and number. A link
+stops working when the order is given to another rider or is delivered. If the SMS fails, the
+admin says so, and **Resend delivery link** retries.
+
 ## Consultations
 
 Experts are added in the admin (**Consultations → Experts**). Medical specialists need a

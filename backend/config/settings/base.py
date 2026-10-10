@@ -135,6 +135,7 @@ REST_FRAMEWORK = {
         "resend_code": "5/min",
         "password_reset": "5/min",
         "sensitive": "5/min",
+        "rider_link": "30/min",
     },
 }
 
@@ -214,6 +215,12 @@ INBOUND_FORWARD_TO = env("INBOUND_FORWARD_TO", default="")
 
 # Paid consultation bookings are also emailed here so the team can schedule them (optional)
 CONSULTATIONS_TEAM_EMAIL = env("CONSULTATIONS_TEAM_EMAIL", default="")
+
+# SMS (rider dispatch) via Africa's Talking. See apps/core/sms.py for the backends.
+SMS_BACKEND = env("SMS_BACKEND", default="console")
+AFRICASTALKING_USERNAME = env("AFRICASTALKING_USERNAME", default="sandbox")
+AFRICASTALKING_API_KEY = env("AFRICASTALKING_API_KEY", default="")
+AFRICASTALKING_SENDER_ID = env("AFRICASTALKING_SENDER_ID", default="")
 
 # Payments - Paystack
 PAYSTACK_SECRET_KEY = env("PAYSTACK_SECRET_KEY", default="")

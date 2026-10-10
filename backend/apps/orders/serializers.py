@@ -61,6 +61,45 @@ class DeliveryQuoteSerializer(serializers.Serializer):
     longitude = serializers.DecimalField(max_digits=9, decimal_places=6, min_value=-180, max_value=180)
 
 
+class RiderDeliverySerializer(serializers.ModelSerializer):
+    """What the rider's link shows: only what's needed to deliver this one order."""
+
+    items = serializers.SerializerMethodField()
+    rider_name = serializers.CharField(source="rider.name", read_only=True)
+    is_paid = serializers.SerializerMethodField()
+    directions_url = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Order
+        fields = [
+            "order_number",
+            "status",
+            "rider_name",
+            "full_name",
+            "phone_number",
+            "address_line1",
+            "address_line2",
+            "city",
+            "landmark",
+            "latitude",
+            "longitude",
+            "directions_url",
+            "items",
+            "is_paid",
+        ]
+
+    def get_items(self, obj):
+        return [{"name": item.product_name, "quantity": item.quantity} for item in obj.items.all()]
+
+    def get_is_paid(self, obj):
+        return obj.paid_at is not None
+
+    def get_directions_url(self, obj):
+        if obj.latitude is None or obj.longitude is None:
+            return ""
+        return f"https://www.google.com/maps/dir/?api=1&destination={obj.latitude},{obj.longitude}"
+
+
 class OrderStatusEventSerializer(serializers.ModelSerializer):
     class Meta:
         model = OrderStatusEvent
@@ -71,6 +110,7 @@ class OrderSerializer(serializers.ModelSerializer):
     items = OrderItemSerializer(many=True, read_only=True)
     status_events = OrderStatusEventSerializer(many=True, read_only=True)
     shipping_address_text = serializers.ReadOnlyField()
+    rider = serializers.SerializerMethodField()
 
     class Meta:
         model = Order
@@ -90,6 +130,7 @@ class OrderSerializer(serializers.ModelSerializer):
             "landmark",
             "pickup_agent",
             "tracking_code",
+            "rider",
             "subtotal",
             "shipping_fee",
             "total_amount",
@@ -99,6 +140,12 @@ class OrderSerializer(serializers.ModelSerializer):
             "created_at",
         ]
         read_only_fields = fields
+
+    def get_rider(self, obj):
+        # The customer sees who's coming only while the order is on its way.
+        if obj.rider_id and obj.status == Order.Status.OUT_FOR_DELIVERY:
+            return {"name": obj.rider.name, "phone_number": obj.rider.phone_number}
+        return None
 
 
 ADDRESS_FIELDS = [

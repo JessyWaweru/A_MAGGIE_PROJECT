@@ -1,4 +1,5 @@
 import math
+import secrets
 import uuid
 from decimal import Decimal
 
@@ -6,6 +7,7 @@ from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.core.validators import MinValueValidator
 from django.db import models
+from django.utils import timezone
 
 from apps.core.models import TimeStampedModel
 from apps.products.models import Product
@@ -93,6 +95,26 @@ class DeliveryOption(TimeStampedModel):
             raise ValidationError({"max_distance_km": "Rider zones need a maximum distance."})
 
 
+class Rider(TimeStampedModel):
+    """A delivery rider. Riders have no account: each delivery reaches them as an SMS link."""
+
+    name = models.CharField(max_length=100)
+    phone_number = models.CharField(max_length=20, help_text="Delivery links are texted here.")
+    is_active = models.BooleanField(default=True)
+    notes = models.CharField(max_length=255, blank=True, help_text="e.g. motorbike plate, usual area")
+
+    class Meta:
+        ordering = ["name"]
+
+    def __str__(self):
+        return f"{self.name} ({self.phone_number})"
+
+    def clean(self):
+        from apps.accounts.validators import normalize_phone
+
+        self.phone_number = normalize_phone(self.phone_number)
+
+
 def rider_zone_for(latitude, longitude):
     """The cheapest active rider zone that reaches this point, and the distance to it."""
     km = distance_km(settings.DISPATCH_LATITUDE, settings.DISPATCH_LONGITUDE, latitude, longitude)
@@ -136,6 +158,17 @@ class Order(TimeStampedModel):
     tracking_code = models.CharField(
         max_length=100, blank=True, help_text="Courier/agent parcel code, shown to the customer."
     )
+    rider = models.ForeignKey(
+        Rider,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="orders",
+        help_text="Choosing a rider texts them a private link to this delivery.",
+    )
+    # The secret in the rider's link. Replaced when the rider changes, cleared once the delivery ends.
+    rider_token = models.CharField(max_length=64, blank=True, db_index=True, editable=False)
+    rider_assigned_at = models.DateTimeField(null=True, blank=True, editable=False)
 
     # Shipping address snapshot (kept even if the user later edits/deletes the saved Address)
     full_name = models.CharField(max_length=150)
@@ -158,16 +191,44 @@ class Order(TimeStampedModel):
     class Meta:
         ordering = ["-created_at"]
 
+    # Once an order reaches one of these, its rider link stops working.
+    RIDER_LINK_CLOSED = {"delivered", "cancelled", "refunded"}
+    # A rider can only be sent out once the order is paid and not yet delivered.
+    DISPATCHABLE = {"paid", "processing", "out_for_delivery"}
+
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self._saved_status = self.status
+        self._saved_rider_id = self.rider_id
 
     def __str__(self):
         return self.order_number
 
+    def clean(self):
+        if self.rider_id and self.rider_id != self._saved_rider_id:
+            if self.delivery_method != DeliveryOption.Method.RIDER:
+                raise ValidationError({"rider": "Only rider-delivery orders can be given a rider."})
+            if self.status not in self.DISPATCHABLE:
+                raise ValidationError({"rider": "Assign a rider once the order is paid and before it's delivered."})
+
+    @property
+    def rider_changed(self):
+        return self.rider_id != self._saved_rider_id
+
     def save(self, *args, **kwargs):
         is_new = self._state.adding
+        token_fields = set()
+        if self.rider_changed:
+            self.rider_token = secrets.token_urlsafe(24) if self.rider_id else ""
+            self.rider_assigned_at = timezone.now() if self.rider_id else None
+            token_fields = {"rider_token", "rider_assigned_at"}
+        if self.status in self.RIDER_LINK_CLOSED and self.rider_token:
+            self.rider_token = ""
+            token_fields.add("rider_token")
+        if kwargs.get("update_fields") is not None and token_fields:
+            kwargs["update_fields"] = set(kwargs["update_fields"]) | token_fields
         super().save(*args, **kwargs)
+        self._saved_rider_id = self.rider_id
         if is_new or self.status != self._saved_status:
             OrderStatusEvent.objects.create(order=self, status=self.status)
             if not is_new:

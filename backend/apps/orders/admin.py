@@ -1,7 +1,17 @@
-from django.contrib import admin
+from django.contrib import admin, messages
 from django.utils.html import format_html
 
-from .models import Cart, CartItem, DeliveryOption, Order, OrderItem, OrderStatusEvent
+from apps.core.sms import SMSError
+
+from .dispatch import text_rider
+from .models import Cart, CartItem, DeliveryOption, Order, OrderItem, OrderStatusEvent, Rider
+
+
+@admin.register(Rider)
+class RiderAdmin(admin.ModelAdmin):
+    list_display = ["name", "phone_number", "is_active", "notes"]
+    list_editable = ["is_active"]
+    search_fields = ["name", "phone_number"]
 
 
 @admin.register(DeliveryOption)
@@ -30,8 +40,9 @@ class OrderStatusEventInline(admin.TabularInline):
 
 @admin.register(Order)
 class OrderAdmin(admin.ModelAdmin):
-    list_display = ["order_number", "user", "status", "delivery_option_name", "total_amount", "created_at"]
-    list_filter = ["status", "delivery_method", "county_or_state"]
+    list_display = ["order_number", "user", "status", "delivery_option_name", "rider", "total_amount", "created_at"]
+    list_filter = ["status", "delivery_method", "rider", "county_or_state"]
+    actions = ["resend_rider_link"]
     search_fields = ["order_number", "user__email", "full_name", "phone_number"]
     readonly_fields = [
         "order_number",
@@ -43,6 +54,7 @@ class OrderAdmin(admin.ModelAdmin):
         "delivery_option_name",
         "open_in_maps",
         "message_for_rider",
+        "rider_link_status",
     ]
     fieldsets = [
         (None, {"fields": ["order_number", "user", "status", "paid_at", "customer_notes"]}),
@@ -60,6 +72,8 @@ class OrderAdmin(admin.ModelAdmin):
                     "county_or_state",
                     "landmark",
                     "open_in_maps",
+                    "rider",
+                    "rider_link_status",
                     "message_for_rider",
                     "pickup_agent",
                     "tracking_code",
@@ -69,6 +83,46 @@ class OrderAdmin(admin.ModelAdmin):
         ("Amounts", {"fields": ["subtotal", "shipping_fee", "total_amount", "currency"]}),
     ]
     inlines = [OrderItemInline, OrderStatusEventInline]
+
+    def formfield_for_foreignkey(self, db_field, request, **kwargs):
+        if db_field.name == "rider":
+            kwargs["queryset"] = Rider.objects.filter(is_active=True)
+        return super().formfield_for_foreignkey(db_field, request, **kwargs)
+
+    def save_model(self, request, obj, form, change):
+        newly_assigned = obj.rider_changed and obj.rider_id
+        super().save_model(request, obj, form, change)
+        if newly_assigned:
+            self._text_rider(request, obj)
+
+    def _text_rider(self, request, order):
+        try:
+            text_rider(order)
+        except SMSError as exc:
+            self.message_user(
+                request,
+                f"{order.order_number}: couldn't text {order.rider.name} ({exc}). "
+                "Fix the SMS settings or the rider's number, then use “Resend delivery link”.",
+                messages.ERROR,
+            )
+        else:
+            self.message_user(request, f"{order.order_number}: delivery link texted to {order.rider.name}.", messages.SUCCESS)
+
+    @admin.action(description="Resend delivery link to the assigned rider")
+    def resend_rider_link(self, request, queryset):
+        for order in queryset.select_related("rider"):
+            if order.rider_id and order.rider_token:
+                self._text_rider(request, order)
+            else:
+                self.message_user(request, f"{order.order_number}: no active rider link.", messages.WARNING)
+
+    @admin.display(description="Rider link")
+    def rider_link_status(self, obj):
+        if obj.rider_token:
+            return f"Active, texted {obj.rider_assigned_at:%d %b %H:%M}" if obj.rider_assigned_at else "Active"
+        if obj.rider_id:
+            return "Closed (delivery finished)"
+        return "—"
 
     @admin.display(description="Customer pin")
     def open_in_maps(self, obj):

@@ -7,6 +7,9 @@
     Order <strong>#{{ order.order_number }}</strong> · {{ order.delivery_option_name }}<br>
     {{ order.shipping_address_text }}
   </p>
+  {% if order.status == "out_for_delivery" and order.rider %}
+  <p style="color: #4a4237; font-size: 15px; line-height: 1.6;">Your rider is <strong>{{ order.rider.name }}</strong>, {{ order.rider.phone_number }}.</p>
+  {% endif %}
   {% if order.tracking_code %}
   <p style="color: #4a4237; font-size: 15px; line-height: 1.6;">Parcel code: <strong>{{ order.tracking_code }}</strong></p>
   {% endif %}

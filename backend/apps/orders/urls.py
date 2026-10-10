@@ -10,6 +10,7 @@ from .views import (
     DeliveryOptionListView,
     DeliveryQuoteView,
     OrderViewSet,
+    RiderDeliveryView,
 )
 
 router = DefaultRouter()
@@ -22,5 +23,7 @@ urlpatterns = [
     path("checkout/", CheckoutView.as_view(), name="checkout"),
     path("delivery-options/", DeliveryOptionListView.as_view(), name="delivery-option-list"),
     path("delivery-quote/", DeliveryQuoteView.as_view(), name="delivery-quote"),
+    path("rider/<str:token>/", RiderDeliveryView.as_view(), name="rider-delivery"),
+    path("rider/<str:token>/<slug:action>/", RiderDeliveryView.as_view(), name="rider-delivery-action"),
     path("", include(router.urls)),
 ]
