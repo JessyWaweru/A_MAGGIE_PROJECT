@@ -200,3 +200,6 @@ class AddressSerializer(serializers.ModelSerializer):
             "created_at",
         ]
         read_only_fields = ["id", "created_at"]
+
+    def validate_phone_number(self, value):
+        return validate_phone(value)

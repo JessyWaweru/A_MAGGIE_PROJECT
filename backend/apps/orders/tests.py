@@ -54,6 +54,11 @@ class DeliveryCheckoutTests(TestCase):
         self.assertEqual(res.json()["delivery_option_name"], "Rider — Greater Nairobi")
         self.assertEqual(Decimal(res.json()["shipping_fee"]), Decimal("400"))
 
+    def test_phone_is_stored_dialable_and_junk_refused(self):
+        self.assertEqual(self.checkout(delivery_method="pickup").json()["phone_number"], "+254712345678")
+        self.client.post("/api/orders/cart/items/", {"product_id": str(self.product.id)}, format="json")
+        self.assertEqual(self.checkout(delivery_method="pickup", phone_number="12").status_code, 400)
+
     def test_rider_zones_get_pricier_with_distance(self):
         quotes = [self.client.get("/api/orders/delivery-quote/", point).json() for point in (CBD, WESTLANDS, RUIRU)]
         fees = [Decimal(q["option"]["fee"]) for q in quotes]
@@ -72,7 +77,7 @@ class DeliveryCheckoutTests(TestCase):
 
     def test_saved_address_pin_is_used(self):
         address = Address.objects.create(
-            user=self.user, full_name="Wanjiru K", phone_number="0712", address_line1="Kitengela Rd", city="Kajiado",
+            user=self.user, full_name="Wanjiru K", phone_number="0712345678", address_line1="Kitengela Rd", city="Kajiado",
             latitude=Decimal(RUIRU["latitude"]), longitude=Decimal(RUIRU["longitude"]),
         )
         res = self.client.post("/api/orders/checkout/", {"delivery_method": "rider", "address_id": str(address.id)}, format="json")

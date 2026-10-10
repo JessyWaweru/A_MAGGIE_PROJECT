@@ -1,6 +1,7 @@
 from rest_framework import serializers
 
 from apps.accounts.models import Address
+from apps.accounts.serializers import validate_phone
 from apps.products.models import Product
 from apps.products.serializers import ProductListSerializer
 
@@ -162,6 +163,8 @@ class CheckoutSerializer(serializers.Serializer):
         missing = [f for f in required if not fields.get(f)]
         if missing:
             raise serializers.ValidationError(f"Please provide: {', '.join(f.replace('_', ' ') for f in missing)}.")
+        # Saved addresses from before phone validation may hold free text; checkout always stores a dialable number.
+        fields["phone_number"] = validate_phone(fields["phone_number"])
 
         if method == DeliveryOption.Method.RIDER:
             if fields["latitude"] is None or fields["longitude"] is None:
