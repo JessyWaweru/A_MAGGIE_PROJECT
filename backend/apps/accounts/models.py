@@ -45,6 +45,8 @@ class User(AbstractUser):
     newsletter_opt_in = models.BooleanField(default=True)
     failed_login_attempts = models.PositiveSmallIntegerField(default=0)
     locked_until = models.DateTimeField(null=True, blank=True)
+    # Stamped into every login token; bumping it signs the account out on every device at once.
+    session_version = models.PositiveIntegerField(default=0)
 
     USERNAME_FIELD = "email"
     REQUIRED_FIELDS = []
@@ -69,6 +71,20 @@ class EmailVerificationCode(models.Model):
 
     def __str__(self):
         return f"Verification code for {self.user}"
+
+
+class EmailChangeRequest(models.Model):
+    """A pending change of a user's email, confirmed by a code sent to the new address."""
+
+    user = models.OneToOneField(User, on_delete=models.CASCADE, primary_key=True, related_name="email_change")
+    new_email = models.EmailField()
+    code_hash = models.CharField(max_length=64)
+    created_at = models.DateTimeField(default=timezone.now)
+    expires_at = models.DateTimeField()
+    attempts = models.PositiveSmallIntegerField(default=0)
+
+    def __str__(self):
+        return f"{self.user} → {self.new_email}"
 
 
 class Address(models.Model):

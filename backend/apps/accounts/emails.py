@@ -1,3 +1,5 @@
+from urllib.parse import quote
+
 from django.conf import settings
 from django.contrib.auth.tokens import default_token_generator
 from django.core.mail import send_mail
@@ -92,3 +94,34 @@ def send_consultation_confirmed_emails(consultation):
             context={"consultation": consultation},
             to_email=team_email,
         )
+
+
+def send_email_change_code(user, new_email, code):
+    _send(
+        subject=f"{code} is your code to confirm your new GOherbal email",
+        template_name="email_change_code",
+        context={"user": user, "code": code, "new_email": new_email},
+        to_email=new_email,
+    )
+
+
+def send_email_changed_alert(user, old_email, revert_token):
+    _send(
+        subject="Your GOherbal email address was changed",
+        template_name="email_changed_alert",
+        context={
+            "user": user,
+            "new_email": user.email,
+            "revert_link": f"{settings.FRONTEND_URL}/revert-email?token={quote(revert_token)}",
+        },
+        to_email=old_email,
+    )
+
+
+def send_password_changed_alert(user):
+    _send(
+        subject="Your GOherbal password was changed",
+        template_name="password_changed_alert",
+        context={"user": user, "reset_link": f"{settings.FRONTEND_URL}/forgot-password"},
+        to_email=user.email,
+    )

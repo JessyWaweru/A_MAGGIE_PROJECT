@@ -1,7 +1,9 @@
 from drf_spectacular.extensions import OpenApiAuthenticationExtension
 from rest_framework_simplejwt.authentication import JWTAuthentication
+from rest_framework_simplejwt.exceptions import AuthenticationFailed
 
 from .cookies import ACCESS_COOKIE, enforce_csrf
+from .security import token_is_current
 
 
 class CookieJWTAuthentication(JWTAuthentication):
@@ -21,6 +23,12 @@ class CookieJWTAuthentication(JWTAuthentication):
         user = self.get_user(validated_token)
         enforce_csrf(request)
         return user, validated_token
+
+    def get_user(self, validated_token):
+        user = super().get_user(validated_token)
+        if not token_is_current(validated_token, user):
+            raise AuthenticationFailed("This session has ended. Please sign in again.", code="session_revoked")
+        return user
 
 
 class CookieJWTScheme(OpenApiAuthenticationExtension):

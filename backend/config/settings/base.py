@@ -134,6 +134,7 @@ REST_FRAMEWORK = {
         "verify_code": "10/min",
         "resend_code": "5/min",
         "password_reset": "5/min",
+        "sensitive": "5/min",
     },
 }
 

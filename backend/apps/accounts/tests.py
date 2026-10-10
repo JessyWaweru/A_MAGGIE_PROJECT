@@ -1,4 +1,5 @@
 import re
+from urllib.parse import unquote
 from datetime import timedelta
 
 from django.core import mail
@@ -239,3 +240,159 @@ class CookieSessionTests(TestCase):
         self.assertEqual(res.cookies[ACCESS_COOKIE].value, "")
         self.client.cookies[REFRESH_COOKIE] = refresh
         self.assertEqual(self.client.post("/api/auth/login/refresh/", HTTP_X_CSRFTOKEN=token).status_code, 401)
+
+
+NEW_STRONG = "Cedar&Rain77"
+
+
+@FAST_HASHER
+class AccountSecurityTests(TestCase):
+    """Two browsers signed in to one account: 'phone' makes the changes, 'laptop' plays the other device."""
+
+    def setUp(self):
+        cache.clear()
+        self.user = User.objects.create_user("kofi@example.com", STRONG, first_name="Kofi", is_email_verified=True)
+        self.phone, self.laptop = APIClient(enforce_csrf_checks=True), APIClient(enforce_csrf_checks=True)
+        for client in (self.phone, self.laptop):
+            self.sign_in(client)
+
+    def post(self, client, url, data=None):
+        token = client.get("/api/auth/csrf/").json()["csrfToken"]
+        return client.post(url, data or {}, format="json", HTTP_X_CSRFTOKEN=token)
+
+    def sign_in(self, client, email="kofi@example.com", password=STRONG):
+        return self.post(client, "/api/auth/login/", {"email": email, "password": password})
+
+    def signed_in(self, client):
+        return client.get("/api/auth/me/").status_code == 200
+
+    def can_refresh(self, client):
+        return self.post(client, "/api/auth/login/refresh/").status_code == 200
+
+    # --- password change ---
+
+    def test_password_change_signs_out_other_devices_only(self):
+        res = self.post(self.phone, "/api/auth/change-password/", {"old_password": STRONG, "new_password": NEW_STRONG})
+        self.assertEqual(res.status_code, 200, res.content)
+        self.assertTrue(self.signed_in(self.phone))
+        self.assertFalse(self.signed_in(self.laptop))
+        self.assertFalse(self.can_refresh(self.laptop))
+        self.assertTrue(self.can_refresh(self.phone))
+
+    def test_password_change_emails_an_alert(self):
+        with self.captureOnCommitCallbacks(execute=True):
+            self.post(self.phone, "/api/auth/change-password/", {"old_password": STRONG, "new_password": NEW_STRONG})
+        self.assertIn("password was changed", mail.outbox[-1].subject)
+
+    def test_wrong_current_password_is_400_not_401(self):
+        res = self.post(self.phone, "/api/auth/change-password/", {"old_password": "Nope&Nope1", "new_password": NEW_STRONG})
+        self.assertEqual(res.status_code, 400)
+        self.assertEqual(res.json()["code"], "wrong_password")
+
+    def test_guessing_the_password_from_a_stolen_session_locks_the_account(self):
+        for _ in range(4):
+            self.post(self.laptop, "/api/auth/change-password/", {"old_password": "Guess&Guess1", "new_password": NEW_STRONG})
+        cache.clear()  # get past the per-minute throttle to reach the lockout
+        res = self.post(self.laptop, "/api/auth/change-password/", {"old_password": "Guess&Guess2", "new_password": NEW_STRONG})
+        self.assertEqual(res.status_code, 403)
+        self.assertEqual(res.json()["code"], "account_locked")
+        self.assertFalse(self.signed_in(self.phone))
+        self.assertEqual(self.sign_in(APIClient(enforce_csrf_checks=True)).status_code, 429)
+
+    def test_password_reset_signs_everyone_out(self):
+        from django.contrib.auth.tokens import default_token_generator
+        from django.utils.encoding import force_bytes
+        from django.utils.http import urlsafe_base64_encode
+
+        self.user.refresh_from_db()  # reset tokens depend on last_login, set by the sign-ins above
+        payload = {
+            "uid": urlsafe_base64_encode(force_bytes(self.user.pk)),
+            "token": default_token_generator.make_token(self.user),
+            "new_password": NEW_STRONG,
+        }
+        self.assertEqual(self.post(APIClient(enforce_csrf_checks=True), "/api/auth/password-reset/confirm/", payload).status_code, 200)
+        self.assertFalse(self.signed_in(self.phone))
+        self.assertFalse(self.can_refresh(self.laptop))
+
+    # --- email change ---
+
+    def start_change(self, new_email="kofi.new@example.com", password=STRONG):
+        return self.post(self.phone, "/api/auth/change-email/", {"new_email": new_email, "password": password})
+
+    def emailed_code(self):
+        return re.search(r"\b(\d{6})\b", mail.outbox[-1].subject).group(1)
+
+    def test_email_change_needs_code_from_new_address(self):
+        self.assertEqual(self.start_change().status_code, 200)
+        self.assertEqual(mail.outbox[-1].to, ["kofi.new@example.com"])
+        self.user.refresh_from_db()
+        self.assertEqual(self.user.email, "kofi@example.com")  # nothing changes until the code is confirmed
+
+        self.assertEqual(self.post(self.phone, "/api/auth/change-email/confirm/", {"code": "000000"}).status_code, 400)
+        with self.captureOnCommitCallbacks(execute=True):
+            res = self.post(self.phone, "/api/auth/change-email/confirm/", {"code": self.emailed_code()})
+        self.assertEqual(res.status_code, 200, res.content)
+        self.assertEqual(res.json()["user"]["email"], "kofi.new@example.com")
+
+        alert = mail.outbox[-1]
+        self.assertEqual(alert.to, ["kofi@example.com"])
+        self.assertIn("/revert-email?token=", alert.body)
+        self.assertTrue(self.signed_in(self.phone))
+        self.assertFalse(self.signed_in(self.laptop))
+        # Sign in now uses the new address only.
+        fresh = APIClient(enforce_csrf_checks=True)
+        self.assertEqual(self.sign_in(fresh).status_code, 401)
+        self.assertEqual(self.sign_in(fresh, email="kofi.new@example.com").status_code, 200)
+
+    def test_email_change_requires_current_password(self):
+        res = self.start_change(password="Wrong&Pass1")
+        self.assertEqual(res.status_code, 400)
+        self.assertEqual(len(mail.outbox), 0)
+
+    def test_cannot_take_an_address_already_in_use(self):
+        User.objects.create_user("taken@example.com", STRONG)
+        self.assertEqual(self.start_change(new_email="Taken@Example.com").status_code, 400)
+
+    def test_address_claimed_while_code_pending_is_refused(self):
+        self.start_change()
+        code = self.emailed_code()
+        User.objects.create_user("kofi.new@example.com", STRONG)
+        self.assertEqual(self.post(self.phone, "/api/auth/change-email/confirm/", {"code": code}).status_code, 400)
+
+    def test_code_dies_after_five_wrong_guesses(self):
+        self.start_change()
+        code = self.emailed_code()
+        for _ in range(5):
+            self.post(self.phone, "/api/auth/change-email/confirm/", {"code": "111111"})
+        cache.clear()
+        res = self.post(self.phone, "/api/auth/change-email/confirm/", {"code": code})
+        self.assertEqual(res.json()["code"], "too_many_attempts")
+
+    def test_undo_link_recovers_a_hijacked_account(self):
+        # A hacker on the laptop changes the email...
+        self.post(self.laptop, "/api/auth/change-email/", {"new_email": "hacker@evil.test", "password": STRONG})
+        code = self.emailed_code()
+        with self.captureOnCommitCallbacks(execute=True):
+            self.post(self.laptop, "/api/auth/change-email/confirm/", {"code": code})
+        link = mail.outbox[-1].body
+        token = unquote(re.search(r"revert-email\?token=([^\"\s]+)", link).group(1))
+
+        # ...the real owner clicks the link in the alert sent to their old address.
+        with self.captureOnCommitCallbacks(execute=True):
+            res = self.post(APIClient(enforce_csrf_checks=True), "/api/auth/change-email/revert/", {"token": token})
+        self.assertEqual(res.status_code, 200, res.content)
+        self.user.refresh_from_db()
+        self.assertEqual(self.user.email, "kofi@example.com")
+        self.assertFalse(self.signed_in(self.laptop))
+        self.assertIn("Reset your password", mail.outbox[-1].subject)
+        self.assertEqual(mail.outbox[-1].to, ["kofi@example.com"])
+
+    def test_tampered_undo_link_is_rejected(self):
+        res = self.post(APIClient(enforce_csrf_checks=True), "/api/auth/change-email/revert/", {"token": "forged:token"})
+        self.assertEqual(res.status_code, 400)
+
+    def test_profile_cannot_change_email_directly(self):
+        token = self.phone.get("/api/auth/csrf/").json()["csrfToken"]
+        self.phone.patch("/api/auth/me/", {"email": "sneaky@example.com"}, format="json", HTTP_X_CSRFTOKEN=token)
+        self.user.refresh_from_db()
+        self.assertEqual(self.user.email, "kofi@example.com")

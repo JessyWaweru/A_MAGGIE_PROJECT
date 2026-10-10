@@ -19,16 +19,38 @@ from rest_framework_simplejwt.tokens import RefreshToken
 
 from .cookies import REFRESH_COOKIE, clear_auth_cookies, enforce_csrf, set_auth_cookies
 
-from .emails import send_password_reset_email, send_welcome_email
-from .models import Address
+from .emails import (
+    send_email_change_code,
+    send_email_changed_alert,
+    send_password_changed_alert,
+    send_password_reset_email,
+    send_welcome_email,
+)
+from .models import Address, EmailChangeRequest
+from .security import (
+    CodeCheck as EmailCodeCheck,
+    PasswordCheck,
+    check_current_password,
+    check_email_change_code,
+    end_all_sessions,
+    issue_refresh_token,
+    make_revert_token,
+    read_revert_token,
+    send_after_commit,
+    start_email_change,
+    token_is_current,
+)
 from .serializers import (
     AddressSerializer,
     ChangePasswordSerializer,
+    ConfirmEmailChangeSerializer,
     LoginSerializer,
     PasswordResetConfirmSerializer,
     PasswordResetRequestSerializer,
     RegisterSerializer,
     ResendVerificationSerializer,
+    RevertEmailChangeSerializer,
+    StartEmailChangeSerializer,
     UserSerializer,
     VerifyCodeSerializer,
 )
@@ -59,7 +81,24 @@ def _session_for(request, user):
     """Sign a verified user in: tokens go into httpOnly cookies, only the profile goes in the body."""
     update_last_login(None, user)
     response = Response({"user": UserSerializer(user).data})
-    return set_auth_cookies(response, RefreshToken.for_user(user))
+    return set_auth_cookies(response, issue_refresh_token(user))
+
+
+def _locked_out():
+    """The current-password check hit the limit: the account is locked and signed out everywhere."""
+    response = Response(
+        {
+            "detail": "Too many incorrect passwords. For your security you've been signed out. "
+            "Try again in 15 minutes, or reset your password.",
+            "code": "account_locked",
+        },
+        status=status.HTTP_403_FORBIDDEN,
+    )
+    return clear_auth_cookies(response)
+
+
+def _wrong_password():
+    return Response({"detail": "Your current password is incorrect.", "code": "wrong_password"}, status=400)
 
 
 @method_decorator(ensure_csrf_cookie, name="dispatch")
@@ -159,6 +198,16 @@ class LoginView(APIView):
         return _session_for(request, user)
 
 
+def _refresh_token_is_current(raw: str) -> bool:
+    """False if the token is invalid or belongs to a session ended by a password/email change."""
+    try:
+        token = RefreshToken(raw)
+    except TokenError:
+        return False
+    user = User.objects.filter(pk=token.get("user_id")).first()
+    return user is not None and user.is_active and token_is_current(token, user)
+
+
 class CookieTokenRefreshView(APIView):
     """Rotates the refresh cookie and issues a fresh access cookie."""
 
@@ -167,7 +216,12 @@ class CookieTokenRefreshView(APIView):
 
     def post(self, request):
         enforce_csrf(request)
-        serializer = TokenRefreshSerializer(data={"refresh": request.COOKIES.get(REFRESH_COOKIE, "")})
+        raw = request.COOKIES.get(REFRESH_COOKIE, "")
+        if not _refresh_token_is_current(raw):
+            return clear_auth_cookies(
+                Response({"detail": "Your session has expired. Please sign in again."}, status=status.HTTP_401_UNAUTHORIZED)
+            )
+        serializer = TokenRefreshSerializer(data={"refresh": raw})
         try:
             serializer.is_valid(raise_exception=True)
         except (TokenError, ValidationError):
@@ -284,19 +338,143 @@ class PasswordResetConfirmView(APIView):
         user.locked_until = None
         user.is_email_verified = True
         user.save(update_fields=["password", "failed_login_attempts", "locked_until", "is_email_verified"])
+        # Whoever else was signed in (possibly the reason for the reset) is signed out.
+        end_all_sessions(user)
+        send_after_commit(send_password_changed_alert, user)
         return Response({"detail": "Password has been reset. You can now log in."})
 
 
 class ChangePasswordView(APIView):
-    permission_classes = [permissions.IsAuthenticated]
+    """Needs the current password. Signs out every other device and emails an alert."""
 
+    permission_classes = [permissions.IsAuthenticated]
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = "sensitive"
+
+    @transaction.atomic
     def post(self, request):
         serializer = ChangePasswordSerializer(data=request.data, context={"request": request})
         serializer.is_valid(raise_exception=True)
         user = request.user
+        check = check_current_password(user, serializer.validated_data["old_password"])
+        if check is PasswordCheck.LOCKED:
+            return _locked_out()
+        if check is PasswordCheck.WRONG:
+            return _wrong_password()
+
         user.set_password(serializer.validated_data["new_password"])
         user.save(update_fields=["password"])
-        return Response({"detail": "Password changed successfully."})
+        end_all_sessions(user)
+        send_after_commit(send_password_changed_alert, user)
+        # This device stays signed in with a fresh session.
+        response = Response({"detail": "Password changed. You've been signed out on all other devices."})
+        return set_auth_cookies(response, issue_refresh_token(user))
+
+
+class StartEmailChangeView(APIView):
+    """Step 1: re-check the password, then email a code to the new address."""
+
+    permission_classes = [permissions.IsAuthenticated]
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = "sensitive"
+
+    @transaction.atomic
+    def post(self, request):
+        serializer = StartEmailChangeSerializer(data=request.data, context={"request": request})
+        serializer.is_valid(raise_exception=True)
+        user = request.user
+        check = check_current_password(user, serializer.validated_data["password"])
+        if check is PasswordCheck.LOCKED:
+            return _locked_out()
+        if check is PasswordCheck.WRONG:
+            return _wrong_password()
+
+        new_email = serializer.validated_data["new_email"]
+        code = start_email_change(user, new_email)
+        send_email_change_code(user, new_email, code)
+        return Response({"detail": f"We've sent a 6-digit code to {new_email}.", "new_email": new_email})
+
+
+class ConfirmEmailChangeView(APIView):
+    """Step 2: the code proves the user owns the new address. Then the old address is alerted."""
+
+    permission_classes = [permissions.IsAuthenticated]
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = "verify_code"
+
+    @transaction.atomic
+    def post(self, request):
+        serializer = ConfirmEmailChangeSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        user = request.user
+        result, pending = check_email_change_code(user, serializer.validated_data["code"])
+        if result is EmailCodeCheck.TOO_MANY_ATTEMPTS:
+            return Response(
+                {"detail": "Too many incorrect codes. Start the email change again.", "code": "too_many_attempts"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        if result is EmailCodeCheck.INVALID:
+            return Response({"detail": INVALID_CODE_MESSAGE}, status=status.HTTP_400_BAD_REQUEST)
+
+        new_email = pending.new_email
+        # Someone may have registered the address while the code was in the post.
+        if User.objects.filter(email__iexact=new_email).exclude(pk=user.pk).exists():
+            pending.delete()
+            return Response({"detail": "That email address is already in use."}, status=status.HTTP_400_BAD_REQUEST)
+
+        old_email = user.email
+        user.email = new_email
+        user.username = new_email
+        user.is_email_verified = True
+        user.save(update_fields=["email", "username", "is_email_verified"])
+        pending.delete()
+        end_all_sessions(user)
+        send_after_commit(send_email_changed_alert, user, old_email, make_revert_token(user, old_email))
+
+        response = Response({"detail": "Your email has been changed.", "user": UserSerializer(user).data})
+        return set_auth_cookies(response, issue_refresh_token(user))
+
+
+class RevertEmailChangeView(APIView):
+    """The undo link emailed to the old address: restores it, signs everyone out and sends a reset link."""
+
+    permission_classes = [permissions.AllowAny]
+    authentication_classes = []
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = "password_reset"
+
+    @transaction.atomic
+    def post(self, request):
+        serializer = RevertEmailChangeSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        parsed = read_revert_token(serializer.validated_data["token"])
+        user = User.objects.select_for_update().filter(pk=parsed[0]).first() if parsed else None
+        if user is None:
+            return Response(
+                {"detail": "This link is invalid or has expired. Contact us and we'll help secure your account."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        old_email = parsed[1]
+        if user.email.lower() != old_email.lower():
+            if User.objects.filter(email__iexact=old_email).exclude(pk=user.pk).exists():
+                return Response(
+                    {"detail": "That address now belongs to another account. Contact us and we'll help."},
+                    status=status.HTTP_409_CONFLICT,
+                )
+            user.email = old_email
+            user.username = old_email
+            user.is_email_verified = True
+            user.save(update_fields=["email", "username", "is_email_verified"])
+        EmailChangeRequest.objects.filter(user=user).delete()
+        end_all_sessions(user)
+        send_after_commit(send_password_reset_email, user)
+        return Response(
+            {
+                "detail": f"Your account email is back to {old_email} and everyone has been signed out. "
+                "We've sent you a link to set a new password."
+            }
+        )
 
 
 class MeView(generics.RetrieveUpdateAPIView):

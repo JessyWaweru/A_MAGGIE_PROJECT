@@ -116,18 +116,40 @@ class PasswordResetConfirmSerializer(serializers.Serializer):
 
 
 class ChangePasswordSerializer(serializers.Serializer):
-    old_password = serializers.CharField()
+    # The current password is checked in the view, where wrong guesses count toward the lockout.
+    old_password = serializers.CharField(trim_whitespace=False)
     new_password = serializers.CharField(min_length=8, max_length=128, trim_whitespace=False)
-
-    def validate_old_password(self, value):
-        user = self.context["request"].user
-        if not user.check_password(value):
-            raise serializers.ValidationError("Current password is incorrect.")
-        return value
 
     def validate_new_password(self, value):
         password_validation.validate_password(value, self.context["request"].user)
         return value
+
+    def validate(self, attrs):
+        if attrs["old_password"] == attrs["new_password"]:
+            raise serializers.ValidationError({"new_password": "Choose a password different from your current one."})
+        return attrs
+
+
+class StartEmailChangeSerializer(serializers.Serializer):
+    new_email = serializers.EmailField()
+    password = serializers.CharField(trim_whitespace=False)
+
+    def validate_new_email(self, value):
+        value = value.lower().strip()
+        user = self.context["request"].user
+        if value == user.email.lower():
+            raise serializers.ValidationError("That's already your email address.")
+        if User.objects.filter(email__iexact=value).exists():
+            raise serializers.ValidationError("That email address is already in use.")
+        return value
+
+
+class ConfirmEmailChangeSerializer(serializers.Serializer):
+    code = serializers.RegexField(r"^\s*\d{6}\s*$", error_messages={"invalid": "Enter the 6-digit code."})
+
+
+class RevertEmailChangeSerializer(serializers.Serializer):
+    token = serializers.CharField()
 
 
 class AddressSerializer(serializers.ModelSerializer):
