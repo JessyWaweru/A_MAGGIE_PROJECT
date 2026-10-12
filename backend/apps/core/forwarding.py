@@ -55,3 +55,17 @@ def forward_inbound_email(inbound):
     if inbound.html_body:
         message.attach_alternative(inbound.html_body, "text/html")
     message.send()
+
+
+def forward_contact_message(contact):
+    """Email a contact-form message to the team's inbox, with Reply going to the customer."""
+    forward_to = settings.INBOUND_FORWARD_TO
+    if not forward_to:
+        return
+    EmailMultiAlternatives(
+        subject=f"Contact form: {contact.subject or 'New message'}",
+        body=f"From: {contact.name} <{contact.email}>\n\n{contact.message}",
+        from_email=settings.DEFAULT_FROM_EMAIL,
+        to=[forward_to],
+        reply_to=[contact.email],
+    ).send()

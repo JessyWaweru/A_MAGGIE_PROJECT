@@ -203,3 +203,20 @@ class NewsletterWelcomeTests(TestCase):
     def test_bad_unsubscribe_token_rejected(self):
         res = APIClient().post("/api/newsletter/unsubscribe/", {"token": "nope"}, format="json")
         self.assertEqual(res.status_code, 400)
+
+
+@override_settings(INBOUND_FORWARD_TO="team@example.com")
+class ContactForwardingTests(TestCase):
+    def test_contact_message_is_forwarded_with_reply_to_sender(self):
+        with self.captureOnCommitCallbacks(execute=True):
+            res = APIClient().post(
+                "/api/contact/",
+                {"name": "Ann", "email": "ann@example.com", "subject": "Order", "message": "Where is it?"},
+                format="json",
+            )
+        self.assertEqual(res.status_code, 201)
+        self.assertEqual(len(mail.outbox), 1)
+        sent = mail.outbox[0]
+        self.assertEqual(sent.to, ["team@example.com"])
+        self.assertEqual(sent.reply_to, ["ann@example.com"])
+        self.assertIn("Where is it?", sent.body)

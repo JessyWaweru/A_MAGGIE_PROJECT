@@ -3,6 +3,7 @@ from rest_framework import serializers
 from apps.accounts.emails import send_newsletter_welcome_email
 from apps.accounts.security import send_after_commit
 
+from .forwarding import forward_contact_message
 from .models import ContactMessage, NewsletterSubscriber
 
 
@@ -28,3 +29,8 @@ class ContactMessageSerializer(serializers.ModelSerializer):
         model = ContactMessage
         fields = ["id", "name", "email", "subject", "message", "created_at"]
         read_only_fields = ["id", "created_at"]
+
+    def create(self, validated_data):
+        contact = super().create(validated_data)
+        send_after_commit(forward_contact_message, contact)
+        return contact
