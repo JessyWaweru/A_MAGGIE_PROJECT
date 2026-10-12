@@ -6,7 +6,8 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from .forwarding import fetch_received_email, forward_inbound_email
-from .models import InboundEmail
+from .models import InboundEmail, NewsletterSubscriber
+from .newsletter import unsubscribe
 from .serializers import ContactMessageSerializer, NewsletterSubscriberSerializer
 from .webhooks import WebhookVerificationError, verify_svix_signature
 
@@ -19,8 +20,20 @@ class NewsletterSubscribeView(APIView):
     def post(self, request):
         serializer = NewsletterSubscriberSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
+        email = serializer.validated_data["email"]
+        if NewsletterSubscriber.objects.filter(email__iexact=email, is_active=True).exists():
+            return Response({"detail": "You're already on the garden letter. Thanks!"}, status=status.HTTP_200_OK)
         serializer.save()
         return Response({"detail": "Subscribed! Welcome to the herb garden."}, status=status.HTTP_201_CREATED)
+
+
+class NewsletterUnsubscribeView(APIView):
+    permission_classes = [permissions.AllowAny]
+
+    def post(self, request):
+        if not unsubscribe(request.data.get("token", "")):
+            return Response({"detail": "This unsubscribe link is invalid."}, status=status.HTTP_400_BAD_REQUEST)
+        return Response({"detail": "You've been unsubscribed from the garden letter."})
 
 
 class ContactMessageView(APIView):

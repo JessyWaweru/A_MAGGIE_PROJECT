@@ -175,3 +175,31 @@ class NewsletterWelcomeTests(TestCase):
         self.assertEqual(len(mail.outbox), 1)
         self.assertEqual(mail.outbox[0].to, ["reader@example.com"])
         self.assertIn("garden letter", mail.outbox[0].subject)
+
+    def test_repeat_signup_is_friendly_and_sends_nothing(self):
+        client = APIClient()
+        with self.captureOnCommitCallbacks(execute=True):
+            client.post("/api/newsletter/subscribe/", {"email": "reader@example.com"}, format="json")
+            res = client.post("/api/newsletter/subscribe/", {"email": "reader@example.com"}, format="json")
+        self.assertEqual(res.status_code, 200)
+        self.assertIn("already", res.data["detail"])
+        self.assertEqual(len(mail.outbox), 1)
+
+    def test_unsubscribe_link_in_welcome_email_works(self):
+        from urllib.parse import parse_qs, urlparse
+        import re
+
+        from .models import NewsletterSubscriber
+
+        client = APIClient()
+        with self.captureOnCommitCallbacks(execute=True):
+            client.post("/api/newsletter/subscribe/", {"email": "reader@example.com"}, format="json")
+        link = re.search(r'href="([^"]*unsubscribe[^"]*)"', mail.outbox[0].body).group(1)
+        token = parse_qs(urlparse(link.replace("&amp;", "&")).query)["token"][0]
+        res = client.post("/api/newsletter/unsubscribe/", {"token": token}, format="json")
+        self.assertEqual(res.status_code, 200)
+        self.assertFalse(NewsletterSubscriber.objects.get().is_active)
+
+    def test_bad_unsubscribe_token_rejected(self):
+        res = APIClient().post("/api/newsletter/unsubscribe/", {"token": "nope"}, format="json")
+        self.assertEqual(res.status_code, 400)

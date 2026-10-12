@@ -7,6 +7,9 @@ from .models import ContactMessage, NewsletterSubscriber
 
 
 class NewsletterSubscriberSerializer(serializers.ModelSerializer):
+    # Plain field so an address already on the list re-subscribes instead of failing the unique check.
+    email = serializers.EmailField()
+
     class Meta:
         model = NewsletterSubscriber
         fields = ["email"]

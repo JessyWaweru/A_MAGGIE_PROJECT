@@ -54,9 +54,15 @@ def send_newsletter_welcome_email(email):
     _send(
         subject="Welcome to the GOherbal garden letter",
         template_name="newsletter_welcome",
-        context={"FRONTEND_URL": settings.FRONTEND_URL},
+        context={"FRONTEND_URL": settings.FRONTEND_URL, "unsubscribe_link": newsletter_unsubscribe_link(email)},
         to_email=email,
     )
+
+
+def newsletter_unsubscribe_link(email):
+    from apps.core.newsletter import make_unsubscribe_token
+
+    return f"{settings.FRONTEND_URL}/newsletter/unsubscribe?token={quote(make_unsubscribe_token(email))}"
 
 
 def send_order_confirmation_email(order):
