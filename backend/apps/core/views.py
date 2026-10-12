@@ -5,7 +5,7 @@ from rest_framework import permissions, status
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from .forwarding import forward_inbound_email
+from .forwarding import fetch_received_email, forward_inbound_email
 from .models import InboundEmail
 from .serializers import ContactMessageSerializer, NewsletterSubscriberSerializer
 from .webhooks import WebhookVerificationError, verify_svix_signature
@@ -74,13 +74,24 @@ class InboundEmailWebhookView(APIView):
         to_field = first_present("to", "to_address", "recipient", default="")
         to_address = to_field[0] if isinstance(to_field, list) else to_field
 
+        email_id = data.get("email_id") or data.get("id") or ""
+        text_body = first_present("text", "text_body", "plain")
+        html_body = first_present("html", "html_body")
+        subject = first_present("subject")
+        if not (text_body or html_body):
+            # Resend's webhook only carries metadata; the body has to be fetched separately.
+            fetched = fetch_received_email(email_id)
+            text_body = fetched.get("text") or ""
+            html_body = fetched.get("html") or ""
+            subject = subject or fetched.get("subject") or ""
+
         inbound = InboundEmail.objects.create(
             message_id=first_present("message_id", "id", "email_id"),
             from_address=first_present("from", "from_address", "sender"),
             to_address=to_address,
-            subject=first_present("subject"),
-            text_body=first_present("text", "text_body", "plain"),
-            html_body=first_present("html", "html_body"),
+            subject=subject,
+            text_body=text_body,
+            html_body=html_body,
             raw_payload=payload,
         )
         try:

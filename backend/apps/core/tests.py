@@ -3,6 +3,7 @@ import hashlib
 import hmac
 import json
 import time
+from unittest import mock
 
 from django.core import mail
 from django.test import TestCase, override_settings
@@ -82,6 +83,19 @@ class InboundEmailWebhookTests(TestCase):
         self.assertEqual(email.to_address, "hello@goherbal.health")
         self.assertEqual(email.subject, "Question about an order")
         self.assertEqual(email.raw_payload, payload)
+
+    @override_settings(RESEND_API_KEY="re_test")
+    def test_body_is_fetched_when_webhook_has_none(self):
+        payload = {"type": "email.received", "data": {"email_id": "e1", "from": "a@example.com", "to": ["hello@goherbal.health"]}}
+        fetched = mock.Mock()
+        fetched.json.return_value = {"text": "The message", "html": "<p>The message</p>", "subject": "Hello"}
+        with mock.patch("apps.core.forwarding.requests.get", return_value=fetched) as get:
+            res = self.post_signed(payload)
+        self.assertEqual(res.status_code, 200)
+        self.assertIn("emails/receiving/e1", get.call_args.args[0])
+        email = InboundEmail.objects.get()
+        self.assertEqual(email.text_body, "The message")
+        self.assertEqual(email.subject, "Hello")
 
     def test_unsigned_request_rejected(self):
         res = self.client.post(self.url, {"type": "email.received", "data": {}}, format="json")

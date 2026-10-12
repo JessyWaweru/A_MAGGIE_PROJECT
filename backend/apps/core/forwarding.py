@@ -1,5 +1,6 @@
 import logging
 
+import requests
 from django.conf import settings
 from django.core.mail import EmailMultiAlternatives
 
@@ -8,6 +9,23 @@ logger = logging.getLogger(__name__)
 
 def _domain(address: str) -> str:
     return address.rpartition("@")[2].strip(">").lower()
+
+
+def fetch_received_email(email_id: str) -> dict:
+    """Fetch a received email's body from Resend, whose inbound webhook doesn't include it."""
+    if not (email_id and settings.RESEND_API_KEY):
+        return {}
+    try:
+        response = requests.get(
+            f"https://api.resend.com/emails/receiving/{email_id}",
+            headers={"Authorization": f"Bearer {settings.RESEND_API_KEY}"},
+            timeout=10,
+        )
+        response.raise_for_status()
+        return response.json()
+    except (requests.RequestException, ValueError):
+        logger.exception("Could not fetch the body of inbound email %s from Resend", email_id)
+        return {}
 
 
 def forward_inbound_email(inbound):
