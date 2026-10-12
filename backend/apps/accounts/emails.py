@@ -50,6 +50,15 @@ def send_welcome_email(user):
     )
 
 
+def send_newsletter_welcome_email(email):
+    _send(
+        subject="Welcome to the GOherbal garden letter",
+        template_name="newsletter_welcome",
+        context={"FRONTEND_URL": settings.FRONTEND_URL},
+        to_email=email,
+    )
+
+
 def send_order_confirmation_email(order):
     _send(
         subject=f"Order confirmed — #{order.order_number}",

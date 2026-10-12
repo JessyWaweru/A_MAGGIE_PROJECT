@@ -164,3 +164,14 @@ class InboundForwardingTests(TestCase):
             res = self.post_signed(BOOKING_ALERT)
         self.assertEqual(res.status_code, 200)
         self.assertEqual(InboundEmail.objects.count(), 1)
+
+
+class NewsletterWelcomeTests(TestCase):
+    def test_new_subscriber_gets_welcome_email_once(self):
+        client = APIClient()
+        with self.captureOnCommitCallbacks(execute=True):
+            res = client.post("/api/newsletter/subscribe/", {"email": "reader@example.com"}, format="json")
+        self.assertEqual(res.status_code, 201)
+        self.assertEqual(len(mail.outbox), 1)
+        self.assertEqual(mail.outbox[0].to, ["reader@example.com"])
+        self.assertIn("garden letter", mail.outbox[0].subject)
