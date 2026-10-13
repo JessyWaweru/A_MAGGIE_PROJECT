@@ -1,5 +1,4 @@
 import logging
-from datetime import timedelta
 
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import update_last_login
