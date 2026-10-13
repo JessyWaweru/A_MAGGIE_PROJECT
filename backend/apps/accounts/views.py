@@ -30,6 +30,7 @@ from .emails import (
 )
 from .models import Address, EmailChangeRequest
 from .security import (
+    LOCKOUT_DURATION,
     CodeCheck as EmailCodeCheck,
     PasswordCheck,
     check_current_password,
@@ -65,7 +66,6 @@ User = get_user_model()
 
 
 MAX_FAILED_LOGINS = 5
-LOCKOUT_DURATION = timedelta(minutes=15)
 INVALID_CODE_MESSAGE = "That code is incorrect or has expired."
 
 
@@ -92,7 +92,7 @@ def _locked_out():
     response = Response(
         {
             "detail": "Too many incorrect passwords. For your security you've been signed out. "
-            "Try again in 15 minutes, or reset your password.",
+            f"Try again in {LOCKOUT_DURATION.seconds // 60} minutes, or reset your password.",
             "code": "account_locked",
         },
         status=status.HTTP_403_FORBIDDEN,

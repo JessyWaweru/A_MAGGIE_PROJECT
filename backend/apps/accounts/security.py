@@ -21,7 +21,7 @@ logger = logging.getLogger(__name__)
 
 SESSION_VERSION_CLAIM = "sv"
 MAX_PASSWORD_ATTEMPTS = 5
-LOCKOUT_DURATION = timedelta(minutes=15)
+LOCKOUT_DURATION = timedelta(minutes=5)
 EMAIL_CODE_TTL = timedelta(minutes=10)
 EMAIL_CODE_MAX_ATTEMPTS = 5
 REVERT_WINDOW = timedelta(days=7)
