@@ -9,6 +9,7 @@ from .views import (
     CookieTokenRefreshView,
     CsrfTokenView,
     DeleteAccountView,
+    GoogleLoginView,
     LoginView,
     LogoutView,
     MeView,
@@ -27,6 +28,7 @@ router.register("addresses", AddressViewSet, basename="address")
 urlpatterns = [
     path("register/", RegisterView.as_view(), name="auth-register"),
     path("login/", LoginView.as_view(), name="auth-login"),
+    path("google/", GoogleLoginView.as_view(), name="auth-google"),
     path("csrf/", CsrfTokenView.as_view(), name="auth-csrf"),
     path("login/refresh/", CookieTokenRefreshView.as_view(), name="auth-login-refresh"),
     path("logout/", LogoutView.as_view(), name="auth-logout"),

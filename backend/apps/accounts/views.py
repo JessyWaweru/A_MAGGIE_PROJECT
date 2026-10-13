@@ -21,6 +21,7 @@ from .cookies import REFRESH_COOKIE, clear_auth_cookies, enforce_csrf, set_auth_
 
 from .deletion import blockers as deletion_blockers
 from .deletion import delete_account
+from .google import verify_google_credential
 from .emails import (
     send_email_change_code,
     send_email_changed_alert,
@@ -198,6 +199,49 @@ class LoginView(APIView):
                 status=status.HTTP_403_FORBIDDEN,
             )
 
+        return _session_for(request, user)
+
+
+class GoogleLoginView(APIView):
+    """Signs in (or signs up) with the ID token from Google's sign-in button."""
+
+    permission_classes = [permissions.AllowAny]
+    authentication_classes = []
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = "auth"
+
+    def post(self, request):
+        enforce_csrf(request)
+        claims = verify_google_credential(request.data.get("credential", ""))
+        if claims is None:
+            return Response(
+                {"detail": "Google sign-in didn't work. Please try again."}, status=status.HTTP_401_UNAUTHORIZED
+            )
+
+        email = claims["email"]
+        with transaction.atomic():
+            user = User.objects.select_for_update().filter(email__iexact=email).first()
+            if user is None:
+                user = User.objects.create_user(
+                    email=email,
+                    first_name=claims.get("given_name", "")[:150],
+                    last_name=claims.get("family_name", "")[:150],
+                    is_email_verified=True,
+                    # They didn't tick the newsletter box, so don't assume they want it.
+                    newsletter_opt_in=False,
+                )
+                user.set_unusable_password()
+                user.save(update_fields=["password"])
+                send_after_commit(send_welcome_email, user)
+            elif not user.is_email_verified:
+                # Someone registered this address but never proved they own it. Google just did,
+                # so the owner takes over and that unproven password stops working.
+                user.is_email_verified = True
+                user.set_unusable_password()
+                user.save(update_fields=["is_email_verified", "password"])
+
+        if not user.is_active:
+            return Response({"detail": "This account is disabled."}, status=status.HTTP_403_FORBIDDEN)
         return _session_for(request, user)
 
 

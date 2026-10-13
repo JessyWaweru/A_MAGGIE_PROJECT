@@ -182,6 +182,9 @@ TURNSTILE_SECRET_KEY = env("TURNSTILE_SECRET_KEY", default="")
 # Frontend base URL, used to build links inside emails (verification, reset, etc.)
 FRONTEND_URL = env("FRONTEND_URL", default="http://localhost:5173")
 
+# OAuth client ID for "Continue with Google" (Google Cloud Console → Credentials). Empty turns it off.
+GOOGLE_CLIENT_ID = env("GOOGLE_CLIENT_ID", default="")
+
 # Delivery: rider fees are priced by distance from this point (placeholder: Nairobi CBD)
 DISPATCH_LATITUDE = env.float("DISPATCH_LATITUDE", default=-1.2841)
 DISPATCH_LONGITUDE = env.float("DISPATCH_LONGITUDE", default=36.8233)

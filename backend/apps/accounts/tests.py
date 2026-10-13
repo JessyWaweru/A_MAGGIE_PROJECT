@@ -512,3 +512,68 @@ class DeleteAccountTests(TestCase):
         self.delete()
         pending.refresh_from_db()
         self.assertEqual(pending.status, Order.Status.CANCELLED)
+
+
+GOOGLE_CLAIMS = {
+    "aud": "client-123",
+    "iss": "https://accounts.google.com",
+    "email": "wanjiru@gmail.com",
+    "email_verified": "true",
+    "given_name": "Wanjiru",
+    "family_name": "Kamau",
+}
+
+
+@FAST_HASHER
+@override_settings(GOOGLE_CLIENT_ID="client-123")
+class GoogleLoginTests(TestCase):
+    def setUp(self):
+        cache.clear()
+        self.client = APIClient()
+
+    def google_login(self, claims=GOOGLE_CLAIMS, status_code=200):
+        response = MagicMock(status_code=status_code)
+        response.json.return_value = claims
+        with patch("apps.accounts.google.requests.get", return_value=response):
+            with self.captureOnCommitCallbacks(execute=True):
+                return self.client.post("/api/auth/google/", {"credential": "token"}, format="json")
+
+    def test_new_user_is_created_verified_and_signed_in(self):
+        res = self.google_login()
+        self.assertEqual(res.status_code, 200)
+        self.assertIn(ACCESS_COOKIE, res.cookies)
+        user = User.objects.get()
+        self.assertEqual((user.first_name, user.last_name), ("Wanjiru", "Kamau"))
+        self.assertTrue(user.is_email_verified)
+        self.assertFalse(user.has_usable_password())
+        self.assertFalse(user.newsletter_opt_in)
+        self.assertFalse(res.json()["user"]["has_password"])
+        self.assertEqual(len(mail.outbox), 1)
+
+    def test_existing_account_signs_in_without_duplicate(self):
+        User.objects.create_user(email="Wanjiru@gmail.com", password=STRONG, is_email_verified=True)
+        res = self.google_login()
+        self.assertEqual(res.status_code, 200)
+        self.assertEqual(User.objects.count(), 1)
+        self.assertTrue(User.objects.get().check_password(STRONG))
+
+    def test_unverified_squatter_password_is_wiped(self):
+        User.objects.create_user(email="wanjiru@gmail.com", password=STRONG)
+        self.assertEqual(self.google_login().status_code, 200)
+        user = User.objects.get()
+        self.assertTrue(user.is_email_verified)
+        self.assertFalse(user.has_usable_password())
+
+    def test_token_for_another_app_rejected(self):
+        self.assertEqual(self.google_login({**GOOGLE_CLAIMS, "aud": "someone-else"}).status_code, 401)
+        self.assertEqual(User.objects.count(), 0)
+
+    def test_unverified_google_email_rejected(self):
+        self.assertEqual(self.google_login({**GOOGLE_CLAIMS, "email_verified": "false"}).status_code, 401)
+
+    def test_invalid_token_rejected(self):
+        self.assertEqual(self.google_login({}, status_code=400).status_code, 401)
+
+    @override_settings(GOOGLE_CLIENT_ID="")
+    def test_disabled_without_client_id(self):
+        self.assertEqual(self.google_login().status_code, 401)
