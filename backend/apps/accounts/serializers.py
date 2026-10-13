@@ -17,9 +17,6 @@ def validate_phone(value):
 
 
 class UserSerializer(serializers.ModelSerializer):
-    # False for accounts made with Google: they set a password through "Forgot password".
-    has_password = serializers.BooleanField(source="has_usable_password", read_only=True)
-
     class Meta:
         model = User
         fields = [
@@ -31,7 +28,6 @@ class UserSerializer(serializers.ModelSerializer):
             "is_email_verified",
             "newsletter_opt_in",
             "date_joined",
-            "has_password",
         ]
         read_only_fields = ["id", "email", "is_email_verified", "date_joined"]
         # Required at sign-up, so the profile can't clear it either.
