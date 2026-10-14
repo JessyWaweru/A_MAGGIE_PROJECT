@@ -69,7 +69,7 @@ def send_order_confirmation_email(order):
     _send(
         subject=f"Order confirmed — #{order.order_number}",
         template_name="order_confirmation",
-        context={"order": order},
+        context={"order": order, "FRONTEND_URL": settings.FRONTEND_URL},
         to_email=order.user.email,
     )
 

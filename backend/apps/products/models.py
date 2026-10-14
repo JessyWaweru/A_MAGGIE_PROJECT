@@ -176,7 +176,11 @@ class ProductImage(TimeStampedModel):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     product = models.ForeignKey(Product, on_delete=models.CASCADE, related_name="gallery_images")
     image = models.ImageField(upload_to="products/gallery/", blank=True, null=True)
-    alt_text = models.CharField(max_length=200, blank=True)
+    alt_text = models.CharField(
+        max_length=200,
+        blank=True,
+        help_text="Describe the photo for people who can't see it, e.g. 'Amber bottle of moringa oil beside fresh leaves'.",
+    )
     display_order = models.PositiveIntegerField(default=0)
 
     class Meta:
@@ -198,7 +202,11 @@ class PlantGalleryImage(TimeStampedModel):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     product = models.ForeignKey(Product, on_delete=models.CASCADE, related_name="plant_gallery_images")
     image = models.ImageField(upload_to="products/garden/", blank=True, null=True)
-    caption = models.CharField(max_length=200, blank=True)
+    caption = models.CharField(
+        max_length=200,
+        blank=True,
+        help_text="Shown under the photo and read out to people who can't see it, e.g. 'Holy basil flowering in the Senses Garden'.",
+    )
     display_order = models.PositiveIntegerField(default=0)
 
     class Meta:
