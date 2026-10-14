@@ -279,3 +279,24 @@ class AfricasTalkingTests(TestCase):
             post.return_value.json.return_value = {"SMSMessageData": {"Recipients": [{"statusCode": 403, "status": "InvalidPhoneNumber"}]}}
             with self.assertRaises(SMSError):
                 send_sms("+254700111222", "hi")
+
+
+class OrderDeletionTests(TestCase):
+    def test_customer_with_paid_order_can_be_deleted(self):
+        # Deletion loads orders partially; reading unloaded fields in __init__ used to recurse forever.
+        from apps.payments.models import Payment
+
+        user = User.objects.create_user(email="gone@example.com", password="x")
+        order = Order.objects.create(user=user, delivery_method="pickup")
+        Payment.objects.create(order=order, amount=10)
+        user.delete()
+        self.assertFalse(Order.objects.filter(pk=order.pk).exists())
+
+    def test_partially_loaded_order_save_does_not_fake_changes(self):
+        user = User.objects.create_user(email="partial@example.com", password="x")
+        order = Order.objects.create(user=user, delivery_method="pickup")
+        events = order.status_events.count()
+        partial = Order.objects.only("id", "customer_notes").get(pk=order.pk)
+        partial.customer_notes = "Ring the bell"
+        partial.save(update_fields=["customer_notes"])
+        self.assertEqual(order.status_events.count(), events)

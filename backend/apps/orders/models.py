@@ -126,6 +126,10 @@ def rider_zone_for(latitude, longitude):
     return zone, km
 
 
+# Marks a field that wasn't loaded when the order was read (see Order.__init__).
+_UNLOADED = object()
+
+
 class Order(TimeStampedModel):
     class Status(models.TextChoices):
         PENDING = "pending", "Pending payment"
@@ -198,8 +202,11 @@ class Order(TimeStampedModel):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self._saved_status = self.status
-        self._saved_rider_id = self.rider_id
+        # Read from __dict__: a field left out of a partial load (e.g. by deletion) would otherwise
+        # trigger a reload, whose __init__ reads it again, forever.
+        # An unloaded field counts as unchanged, so it never fakes a status change or a new rider.
+        self._saved_status = self.__dict__.get("status", _UNLOADED)
+        self._saved_rider_id = self.__dict__.get("rider_id", _UNLOADED)
 
     def __str__(self):
         return self.order_number
@@ -213,7 +220,7 @@ class Order(TimeStampedModel):
 
     @property
     def rider_changed(self):
-        return self.rider_id != self._saved_rider_id
+        return self._saved_rider_id is not _UNLOADED and self.rider_id != self._saved_rider_id
 
     def save(self, *args, **kwargs):
         is_new = self._state.adding
@@ -229,7 +236,7 @@ class Order(TimeStampedModel):
             kwargs["update_fields"] = set(kwargs["update_fields"]) | token_fields
         super().save(*args, **kwargs)
         self._saved_rider_id = self.rider_id
-        if is_new or self.status != self._saved_status:
+        if is_new or (self._saved_status is not _UNLOADED and self.status != self._saved_status):
             OrderStatusEvent.objects.create(order=self, status=self.status)
             if not is_new:
                 from .notifications import notify_status_change
