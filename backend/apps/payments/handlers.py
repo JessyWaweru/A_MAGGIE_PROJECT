@@ -1,3 +1,5 @@
+import logging
+
 from django.db import transaction
 from django.db.models import F
 from django.utils import timezone
@@ -8,6 +10,19 @@ from apps.orders.models import Order
 from apps.products.models import Product
 
 from .models import Payment
+from .services import to_subunit
+
+logger = logging.getLogger(__name__)
+
+
+def _paid_in_full(payment: Payment, verify_data: dict) -> bool:
+    """Paystack says "success" for whatever was charged; make sure that's this payment's full price."""
+    try:
+        amount = int(verify_data.get("amount"))
+    except (TypeError, ValueError):
+        return False
+    currency = (verify_data.get("currency") or "").upper()
+    return amount == to_subunit(payment.amount) and currency == payment.currency.upper()
 
 
 @transaction.atomic
@@ -21,6 +36,21 @@ def fulfill_successful_payment(payment: Payment, verify_data: dict):
     """
     payment = Payment.objects.select_for_update().get(pk=payment.pk)
     if payment.status == Payment.Status.SUCCESS:
+        return payment
+
+    if not _paid_in_full(payment, verify_data):
+        # Never fulfil on a short or wrong-currency charge; leave it for the team to look at.
+        logger.error(
+            "Payment %s: Paystack charged %s %s but %s %s was due. Not fulfilling.",
+            payment.reference,
+            verify_data.get("amount"),
+            verify_data.get("currency"),
+            to_subunit(payment.amount),
+            payment.currency,
+        )
+        payment.status = Payment.Status.FAILED
+        payment.raw_response = verify_data
+        payment.save(update_fields=["status", "raw_response", "updated_at"])
         return payment
 
     payment.status = Payment.Status.SUCCESS

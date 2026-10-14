@@ -71,8 +71,9 @@ class BookingTests(TestCase):
     def test_payment_confirms_booking_and_emails_everyone(self):
         consultation = Consultation.objects.get(reference=self.book().json()["reference"])
         payment = Payment.objects.create(consultation=consultation, amount=consultation.fee)
-        fulfill_successful_payment(payment, {"channel": "mobile_money"})
-        fulfill_successful_payment(payment, {"channel": "mobile_money"})  # webhook + verify both fire
+        paid = {"channel": "mobile_money", "amount": 150000, "currency": "KES"}
+        fulfill_successful_payment(payment, paid)
+        fulfill_successful_payment(payment, paid)  # webhook + verify both fire
 
         consultation.refresh_from_db()
         self.assertEqual(consultation.status, Consultation.Status.CONFIRMED)
