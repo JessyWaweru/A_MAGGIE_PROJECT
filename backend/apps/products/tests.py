@@ -56,3 +56,22 @@ class SmartSearchEndpointTests(TestCase):
 
     def test_inactive_products_are_excluded(self):
         self.assertNotIn("Hidden Draft", self.names(self.search("sleep")))
+
+
+class ReviewerNameTests(TestCase):
+    def name_for(self, **user_fields):
+        from apps.accounts.models import User
+
+        from .models import Review
+        from .serializers import ReviewSerializer
+
+        user = User.objects.create_user(email="jane.doe1990@example.com", password="x", **user_fields)
+        product = Product.objects.create(name=f"Tea {User.objects.count()}", price=100)
+        review = Review.objects.create(product=product, user=user, rating=5, comment="Lovely")
+        return ReviewSerializer(review).data["user_name"]
+
+    def test_shows_first_name_and_initial_only(self):
+        self.assertEqual(self.name_for(first_name="Jane", last_name="Doe"), "Jane D.")
+
+    def test_never_shows_email(self):
+        self.assertEqual(self.name_for(), "GOherbal customer")

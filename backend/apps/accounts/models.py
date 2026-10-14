@@ -42,7 +42,8 @@ class User(AbstractUser):
     email = models.EmailField(unique=True)
     phone_number = models.CharField(max_length=20, blank=True)
     is_email_verified = models.BooleanField(default=False)
-    newsletter_opt_in = models.BooleanField(default=True)
+    # Marketing needs an active opt-in (Data Protection Act 2019), so it starts off.
+    newsletter_opt_in = models.BooleanField(default=False)
     failed_login_attempts = models.PositiveSmallIntegerField(default=0)
     locked_until = models.DateTimeField(null=True, blank=True)
     # Stamped into every login token; bumping it signs the account out on every device at once.

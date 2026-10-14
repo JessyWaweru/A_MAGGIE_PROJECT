@@ -75,8 +75,11 @@ class ReviewSerializer(serializers.ModelSerializer):
         read_only_fields = ["id", "is_verified_purchase", "created_at"]
 
     def get_user_name(self, obj):
-        full_name = f"{obj.user.first_name} {obj.user.last_name}".strip()
-        return full_name or obj.user.email.split("@")[0]
+        # Shown publicly, so only a first name and initial; never any part of the email.
+        first, last = obj.user.first_name.strip(), obj.user.last_name.strip()
+        if not first:
+            return "GOherbal customer"
+        return f"{first} {last[0]}." if last else first
 
 
 class ReviewCreateSerializer(serializers.ModelSerializer):
