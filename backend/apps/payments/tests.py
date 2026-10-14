@@ -52,6 +52,13 @@ class PaymentSecurityTests(TestCase):
         paystack_post(self.client, self.charge())  # Paystack retries; must not double-count stock
         self.assert_paid(True)
 
+    def test_only_needed_payment_details_are_stored(self):
+        event = self.charge()
+        event["data"].update(ip_address="41.90.1.2", customer={"email": "buyer@example.com"}, authorization={"last4": "4081"})
+        paystack_post(self.client, event)
+        self.payment.refresh_from_db()
+        self.assertEqual(set(self.payment.raw_response), {"reference", "amount", "currency", "channel"})
+
     def test_forged_webhook_is_rejected(self):
         res = paystack_post(self.client, self.charge(), secret="guessed-secret")
         self.assertEqual(res.status_code, 401)

@@ -15,7 +15,7 @@ from apps.orders.models import Order
 from .handlers import fulfill_successful_payment
 from .models import Payment
 from .serializers import InitializePaymentSerializer, PaymentSerializer
-from .services import PaystackError, initialize_transaction, verify_transaction
+from .services import PaystackError, initialize_transaction, payment_record, verify_transaction
 
 
 class InitializePaymentView(APIView):
@@ -91,7 +91,7 @@ class VerifyPaymentView(APIView):
             payment = fulfill_successful_payment(payment, data)
         else:
             payment.status = Payment.Status.FAILED
-            payment.raw_response = data
+            payment.raw_response = payment_record(data)
             payment.save(update_fields=["status", "raw_response", "updated_at"])
 
         return Response(PaymentSerializer(payment).data)

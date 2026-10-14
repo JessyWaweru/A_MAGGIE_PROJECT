@@ -10,7 +10,7 @@ from apps.orders.models import Order
 from apps.products.models import Product
 
 from .models import Payment
-from .services import to_subunit
+from .services import payment_record, to_subunit
 
 logger = logging.getLogger(__name__)
 
@@ -49,14 +49,14 @@ def fulfill_successful_payment(payment: Payment, verify_data: dict):
             payment.currency,
         )
         payment.status = Payment.Status.FAILED
-        payment.raw_response = verify_data
+        payment.raw_response = payment_record(verify_data)
         payment.save(update_fields=["status", "raw_response", "updated_at"])
         return payment
 
     payment.status = Payment.Status.SUCCESS
     payment.channel = verify_data.get("channel", "")
     payment.paid_at = timezone.now()
-    payment.raw_response = verify_data
+    payment.raw_response = payment_record(verify_data)
     payment.save(update_fields=["status", "channel", "paid_at", "raw_response", "updated_at"])
 
     if payment.consultation_id:

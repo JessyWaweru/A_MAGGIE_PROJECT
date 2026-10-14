@@ -13,6 +13,15 @@ def _headers():
     }
 
 
+# What we keep from Paystack's transaction data: enough to reconcile, nothing personal
+# (Paystack also sends the payer's IP address, email and card details, which we don't need).
+PAYMENT_RECORD_FIELDS = ("id", "status", "reference", "amount", "currency", "channel", "gateway_response", "paid_at", "fees")
+
+
+def payment_record(data: dict) -> dict:
+    return {key: data[key] for key in PAYMENT_RECORD_FIELDS if key in data}
+
+
 def to_subunit(amount) -> int:
     """Paystack expects amounts in the smallest currency unit (e.g. cents/kobo)."""
     return int(round(amount * 100))
