@@ -5,8 +5,9 @@ from django.http import Http404
 from django.shortcuts import get_object_or_404
 from rest_framework import generics, permissions, status, viewsets
 from rest_framework.response import Response
-from rest_framework.throttling import ScopedRateThrottle
 from rest_framework.views import APIView
+
+from apps.core.throttling import ScopedRateThrottle
 
 from .models import Cart, CartItem, DeliveryOption, Order, OrderItem, rider_zone_for
 from .serializers import (
@@ -80,6 +81,7 @@ class CartItemDetailView(APIView):
 
 class CheckoutView(APIView):
     permission_classes = [permissions.IsAuthenticated]
+    throttle_scope = "create"
 
     @transaction.atomic
     def post(self, request):

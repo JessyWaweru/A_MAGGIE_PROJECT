@@ -20,6 +20,7 @@ from .services import PaystackError, initialize_transaction, payment_record, ver
 
 class InitializePaymentView(APIView):
     permission_classes = [permissions.IsAuthenticated]
+    throttle_scope = "create"
 
     def post(self, request):
         serializer = InitializePaymentSerializer(data=request.data)

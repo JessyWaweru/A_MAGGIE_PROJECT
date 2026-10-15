@@ -10,11 +10,12 @@ from django.views.decorators.csrf import ensure_csrf_cookie
 from rest_framework import generics, permissions, status, viewsets
 from rest_framework.exceptions import ValidationError
 from rest_framework.response import Response
-from rest_framework.throttling import ScopedRateThrottle
 from rest_framework.views import APIView
 from rest_framework_simplejwt.exceptions import TokenError
 from rest_framework_simplejwt.serializers import TokenRefreshSerializer
 from rest_framework_simplejwt.tokens import RefreshToken
+
+from apps.core.throttling import ScopedRateThrottle
 
 from .cookies import REFRESH_COOKIE, clear_auth_cookies, enforce_csrf, set_auth_cookies
 

@@ -5,14 +5,11 @@ import logging
 import requests
 from django.conf import settings
 
+from apps.core.throttling import client_ip
+
 logger = logging.getLogger(__name__)
 
 VERIFY_URL = "https://challenges.cloudflare.com/turnstile/v0/siteverify"
-
-
-def client_ip(request):
-    forwarded = request.META.get("HTTP_X_FORWARDED_FOR", "")
-    return forwarded.split(",")[0].strip() if forwarded else request.META.get("REMOTE_ADDR", "")
 
 
 def passes_turnstile(request, token: str) -> bool:

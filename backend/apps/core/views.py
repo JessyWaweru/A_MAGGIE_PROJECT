@@ -16,6 +16,7 @@ logger = logging.getLogger(__name__)
 
 class NewsletterSubscribeView(APIView):
     permission_classes = [permissions.AllowAny]
+    throttle_scope = "public_form"
 
     def post(self, request):
         serializer = NewsletterSubscriberSerializer(data=request.data)
@@ -38,6 +39,7 @@ class NewsletterUnsubscribeView(APIView):
 
 class ContactMessageView(APIView):
     permission_classes = [permissions.AllowAny]
+    throttle_scope = "public_form"
 
     def post(self, request):
         serializer = ContactMessageSerializer(data=request.data)

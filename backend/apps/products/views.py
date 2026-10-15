@@ -150,6 +150,12 @@ class ProductReviewListCreateView(generics.ListCreateAPIView):
     def get_serializer_class(self):
         return ReviewCreateSerializer if self.request.method == "POST" else ReviewSerializer
 
+    def get_throttles(self):
+        # Only posting is limited, not reading reviews.
+        if self.request.method == "POST":
+            self.throttle_scope = "create"
+        return super().get_throttles()
+
     def get_serializer_context(self):
         context = super().get_serializer_context()
         context["product"] = self.get_product()

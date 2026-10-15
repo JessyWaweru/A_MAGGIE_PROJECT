@@ -1,7 +1,7 @@
 from django.test import TestCase
 from rest_framework.test import APIClient
 
-from .models import Category, Ingredient, Product, Symptom
+from .models import Category, Ingredient, Product, Review, Symptom
 from .search import word_matches
 
 
@@ -75,3 +75,37 @@ class ReviewerNameTests(TestCase):
 
     def test_never_shows_email(self):
         self.assertEqual(self.name_for(), "GOherbal customer")
+
+
+class VerifiedPurchaseReviewTests(TestCase):
+    def setUp(self):
+        from apps.accounts.models import User
+
+        self.user = User.objects.create_user(email="amina@example.com", password="x", first_name="Amina")
+        self.product = Product.objects.create(name="Moringa Leaf Powder", price=600)
+        self.client = APIClient()
+        self.client.force_authenticate(self.user)
+
+    def buy(self, status):
+        from django.utils import timezone
+
+        from apps.orders.models import Order, OrderItem
+
+        order = Order.objects.create(user=self.user, delivery_method="pickup", status=status, paid_at=timezone.now())
+        OrderItem.objects.create(order=order, product=self.product, product_name=self.product.name, unit_price=600, quantity=1)
+
+    def review(self):
+        res = self.client.post(f"/api/products/{self.product.slug}/reviews/", {"rating": 5}, format="json")
+        self.assertEqual(res.status_code, 201)
+        return Review.objects.get(user=self.user, product=self.product).is_verified_purchase
+
+    def test_delivered_order_counts_as_verified(self):
+        self.buy("delivered")
+        self.assertTrue(self.review())
+
+    def test_refunded_order_does_not_count(self):
+        self.buy("refunded")
+        self.assertFalse(self.review())
+
+    def test_no_order_is_not_verified(self):
+        self.assertFalse(self.review())

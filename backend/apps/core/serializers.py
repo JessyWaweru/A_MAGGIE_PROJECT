@@ -29,6 +29,7 @@ class ContactMessageSerializer(serializers.ModelSerializer):
         model = ContactMessage
         fields = ["id", "name", "email", "subject", "message", "created_at"]
         read_only_fields = ["id", "created_at"]
+        extra_kwargs = {"message": {"max_length": 5000}}
 
     def create(self, validated_data):
         contact = super().create(validated_data)

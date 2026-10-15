@@ -33,6 +33,12 @@ class ConsultationViewSet(
     def get_queryset(self):
         return Consultation.objects.filter(user=self.request.user).select_related("expert")
 
+    def get_throttles(self):
+        # Only booking is limited, not browsing your bookings.
+        if self.action == "create":
+            self.throttle_scope = "create"
+        return super().get_throttles()
+
     @transaction.atomic
     def create(self, request, *args, **kwargs):
         serializer = BookConsultationSerializer(data=request.data)

@@ -86,6 +86,10 @@ DATABASES = {
 
 # Custom user model
 AUTH_USER_MODEL = "accounts.User"
+AUTHENTICATION_BACKENDS = ["apps.accounts.backends.LockoutModelBackend"]
+
+# The admin's address. A less guessable one keeps it out of automated scans (set it in production).
+ADMIN_URL = env("ADMIN_URL", default="admin").strip("/") + "/"
 
 AUTH_PASSWORD_VALIDATORS = [
     {"NAME": "django.contrib.auth.password_validation.UserAttributeSimilarityValidator"},
@@ -126,16 +130,26 @@ REST_FRAMEWORK = {
     "DEFAULT_PAGINATION_CLASS": "rest_framework.pagination.PageNumberPagination",
     "PAGE_SIZE": 12,
     "DEFAULT_SCHEMA_CLASS": "drf_spectacular.openapi.AutoSchema",
+    # Every endpoint gets a generous per-visitor ceiling; sensitive ones add a tighter scope.
+    # The anonymous ceiling is per IP, and mobile networks put many customers behind one IP.
     "DEFAULT_THROTTLE_CLASSES": (
-        "rest_framework.throttling.ScopedRateThrottle",
+        "apps.core.throttling.ScopedRateThrottle",
+        "apps.core.throttling.AnonRateThrottle",
+        "apps.core.throttling.UserRateThrottle",
     ),
     "DEFAULT_THROTTLE_RATES": {
+        "anon": "300/min",
+        "user": "300/min",
         "auth": "20/min",
         "verify_code": "10/min",
         "resend_code": "5/min",
         "password_reset": "5/min",
         "sensitive": "5/min",
         "rider_link": "30/min",
+        # Anonymous forms that store data or send email (newsletter, contact)
+        "public_form": "5/min",
+        # Creating orders, bookings, payments and reviews
+        "create": "10/min",
     },
 }
 

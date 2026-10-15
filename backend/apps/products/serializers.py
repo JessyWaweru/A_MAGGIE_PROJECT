@@ -86,6 +86,7 @@ class ReviewCreateSerializer(serializers.ModelSerializer):
     class Meta:
         model = Review
         fields = ["rating", "title", "comment"]
+        extra_kwargs = {"comment": {"max_length": 3000}}
 
     def validate(self, attrs):
         request = self.context["request"]
@@ -97,13 +98,15 @@ class ReviewCreateSerializer(serializers.ModelSerializer):
     def create(self, validated_data):
         request = self.context["request"]
         product = self.context["product"]
-        from apps.orders.models import OrderItem
+        from apps.orders.models import Order, OrderItem
 
-        is_verified_purchase = OrderItem.objects.filter(
-            order__user=request.user,
-            product=product,
-            order__status="paid",
-        ).exists()
+        # Bought means paid for at some point and not later cancelled or refunded, so the
+        # badge stays once the order moves on to preparing, delivery and delivered.
+        is_verified_purchase = (
+            OrderItem.objects.filter(order__user=request.user, product=product, order__paid_at__isnull=False)
+            .exclude(order__status__in=[Order.Status.CANCELLED, Order.Status.REFUNDED])
+            .exists()
+        )
         return Review.objects.create(
             product=product,
             user=request.user,

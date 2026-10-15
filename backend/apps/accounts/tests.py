@@ -512,3 +512,25 @@ class DeleteAccountTests(TestCase):
         self.delete()
         pending.refresh_from_db()
         self.assertEqual(pending.status, Order.Status.CANCELLED)
+
+
+@FAST_HASHER
+class AdminLoginLockoutTests(TestCase):
+    def setUp(self):
+        self.admin = User.objects.create_superuser(email="staff@example.com", password=STRONG)
+
+    def admin_login(self, password):
+        return self.client.post(
+            "/admin/login/?next=/admin/", {"username": "Staff@example.com", "password": password}
+        )
+
+    def test_correct_password_signs_in(self):
+        self.assertRedirects(self.admin_login(STRONG), "/admin/", fetch_redirect_response=False)
+
+    def test_five_wrong_passwords_lock_out_even_the_right_one(self):
+        for _ in range(5):
+            self.assertEqual(self.admin_login("wrong-guess").status_code, 200)
+        self.admin.refresh_from_db()
+        self.assertIsNotNone(self.admin.locked_until)
+        self.assertEqual(self.admin_login(STRONG).status_code, 200)  # form shown again, not signed in
+        self.assertNotIn("_auth_user_id", self.client.session)

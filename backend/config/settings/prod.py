@@ -1,8 +1,15 @@
 import os
 
+from django.core.exceptions import ImproperlyConfigured
+
 from .base import *  # noqa
 
 DEBUG = False
+
+# Everything signed (password reset links, verification codes, undo links) depends on this key.
+# Refuse to start with the placeholder or a short one rather than run with forgeable links.
+if SECRET_KEY.startswith("django-insecure") or len(SECRET_KEY) < 50:
+    raise ImproperlyConfigured("Set SECRET_KEY to a long random value (50+ characters) in production.")
 
 # Render sets this automatically; add it so the health check and API calls
 # to the assigned *.onrender.com domain aren't rejected by ALLOWED_HOSTS.

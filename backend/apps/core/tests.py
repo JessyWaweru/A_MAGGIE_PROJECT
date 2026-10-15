@@ -6,10 +6,12 @@ import time
 from unittest import mock
 
 from django.core import mail
-from django.test import TestCase, override_settings
+from django.core.cache import cache
+from django.test import RequestFactory, TestCase, override_settings
 from rest_framework.test import APIClient
 
 from .models import InboundEmail
+from .throttling import client_ip
 from .webhooks import WebhookVerificationError, verify_svix_signature
 
 SECRET = "whsec_" + base64.b64encode(b"a-test-signing-secret-32-bytes!!").decode()
@@ -220,3 +222,60 @@ class ContactForwardingTests(TestCase):
         self.assertEqual(sent.to, ["team@example.com"])
         self.assertEqual(sent.reply_to, ["ann@example.com"])
         self.assertIn("Where is it?", sent.body)
+
+
+class ClientIPTests(TestCase):
+    def ip(self, **meta):
+        request = RequestFactory().get("/", **meta)
+        return client_ip(request)
+
+    def test_direct_connection_uses_remote_addr(self):
+        self.assertEqual(self.ip(REMOTE_ADDR="41.90.64.7"), "41.90.64.7")
+
+    def test_client_written_forwarded_for_entries_are_ignored(self):
+        # Render appends the real peer; whatever the client sent sits to its left.
+        self.assertEqual(self.ip(HTTP_X_FORWARDED_FOR="1.2.3.4, 41.90.64.7", REMOTE_ADDR="10.0.0.2"), "41.90.64.7")
+
+    def test_internal_hops_are_skipped(self):
+        self.assertEqual(self.ip(HTTP_X_FORWARDED_FOR="1.2.3.4, 41.90.64.7, 10.1.2.3"), "41.90.64.7")
+
+    def test_cloudflare_peer_trusts_cf_connecting_ip(self):
+        ip = self.ip(HTTP_X_FORWARDED_FOR="1.2.3.4, 162.158.1.1", HTTP_CF_CONNECTING_IP="105.160.2.9")
+        self.assertEqual(ip, "105.160.2.9")
+
+    def test_cf_connecting_ip_from_anyone_else_is_ignored(self):
+        ip = self.ip(HTTP_X_FORWARDED_FOR="41.90.64.7", HTTP_CF_CONNECTING_IP="105.160.2.9")
+        self.assertEqual(ip, "41.90.64.7")
+
+
+@override_settings(INBOUND_FORWARD_TO="")
+class PublicFormThrottleTests(TestCase):
+    def setUp(self):
+        cache.clear()
+        self.addCleanup(cache.clear)
+
+    def test_changing_forwarded_for_does_not_escape_the_limit(self):
+        client = APIClient()
+        statuses = [
+            client.post(
+                "/api/contact/",
+                {"name": "Ama", "email": "ama@example.com", "message": "Hello there"},
+                format="json",
+                HTTP_X_FORWARDED_FOR=f"10.9.8.{n}, 41.90.64.7",
+            ).status_code
+            for n in range(6)
+        ]
+        self.assertEqual(statuses, [201] * 5 + [429])
+
+    def test_overlong_contact_message_is_rejected(self):
+        res = APIClient().post(
+            "/api/contact/", {"name": "Ama", "email": "ama@example.com", "message": "x" * 5001}, format="json"
+        )
+        self.assertEqual(res.status_code, 400)
+        self.assertIn("message", res.json())
+
+
+class ApiDocsTests(TestCase):
+    def test_api_docs_are_not_served_without_debug(self):
+        self.assertEqual(APIClient().get("/api/docs/").status_code, 404)
+        self.assertEqual(APIClient().get("/api/schema/").status_code, 404)

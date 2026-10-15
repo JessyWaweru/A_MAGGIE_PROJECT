@@ -186,7 +186,7 @@ class CheckoutSerializer(serializers.Serializer):
     latitude = serializers.DecimalField(max_digits=9, decimal_places=6, required=False, allow_null=True)
     longitude = serializers.DecimalField(max_digits=9, decimal_places=6, required=False, allow_null=True)
     pickup_agent = serializers.CharField(max_length=255, required=False, allow_blank=True)
-    customer_notes = serializers.CharField(required=False, allow_blank=True)
+    customer_notes = serializers.CharField(max_length=1000, required=False, allow_blank=True)
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
