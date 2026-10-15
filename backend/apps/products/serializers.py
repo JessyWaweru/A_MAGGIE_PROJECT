@@ -60,6 +60,7 @@ class PlantGalleryImageSerializer(serializers.ModelSerializer):
 
 class ReviewSerializer(serializers.ModelSerializer):
     user_name = serializers.SerializerMethodField()
+    is_mine = serializers.SerializerMethodField()
 
     class Meta:
         model = Review
@@ -70,6 +71,7 @@ class ReviewSerializer(serializers.ModelSerializer):
             "title",
             "comment",
             "is_verified_purchase",
+            "is_mine",
             "created_at",
         ]
         read_only_fields = ["id", "is_verified_purchase", "created_at"]
@@ -80,6 +82,11 @@ class ReviewSerializer(serializers.ModelSerializer):
         if not first:
             return "GOherbal customer"
         return f"{first} {last[0]}." if last else first
+
+    def get_is_mine(self, obj):
+        # Lets the page swap the review form for a thank-you without revealing who wrote what.
+        request = self.context.get("request")
+        return bool(request and request.user.is_authenticated and obj.user_id == request.user.pk)
 
 
 class ReviewCreateSerializer(serializers.ModelSerializer):

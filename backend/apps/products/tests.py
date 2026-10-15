@@ -109,3 +109,14 @@ class VerifiedPurchaseReviewTests(TestCase):
 
     def test_no_order_is_not_verified(self):
         self.assertFalse(self.review())
+
+    def test_product_page_marks_only_your_own_review(self):
+        from apps.accounts.models import User
+
+        self.review()
+        other = APIClient()
+        other.force_authenticate(User.objects.create_user(email="baraka@example.com", password="x"))
+        url = f"/api/products/{self.product.slug}/"
+        self.assertTrue(self.client.get(url).json()["reviews"][0]["is_mine"])
+        self.assertFalse(other.get(url).json()["reviews"][0]["is_mine"])
+        self.assertFalse(APIClient().get(url).json()["reviews"][0]["is_mine"])
