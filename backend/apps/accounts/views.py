@@ -104,6 +104,30 @@ def _wrong_password():
     return Response({"detail": "Your current password is incorrect.", "code": "wrong_password"}, status=400)
 
 
+def _reject_password(user, password):
+    """Checks the current password before a sensitive change; returns the error response, or None if it's right."""
+    check = check_current_password(user, password)
+    if check is PasswordCheck.LOCKED:
+        return _locked_out()
+    if check is PasswordCheck.WRONG:
+        return _wrong_password()
+    return None
+
+
+def _session_expired():
+    return clear_auth_cookies(
+        Response({"detail": "Your session has expired. Please sign in again."}, status=status.HTTP_401_UNAUTHORIZED)
+    )
+
+
+def _set_verified_email(user, email):
+    """Email is also the username, and an address the user has just proved they own is verified."""
+    user.email = email
+    user.username = email
+    user.is_email_verified = True
+    user.save(update_fields=["email", "username", "is_email_verified"])
+
+
 @method_decorator(ensure_csrf_cookie, name="dispatch")
 class CsrfTokenView(APIView):
     """Hands the SPA a CSRF token. It can't read the API's cookies cross-origin, so it gets it here."""
@@ -221,16 +245,12 @@ class CookieTokenRefreshView(APIView):
         enforce_csrf(request)
         raw = request.COOKIES.get(REFRESH_COOKIE, "")
         if not _refresh_token_is_current(raw):
-            return clear_auth_cookies(
-                Response({"detail": "Your session has expired. Please sign in again."}, status=status.HTTP_401_UNAUTHORIZED)
-            )
+            return _session_expired()
         serializer = TokenRefreshSerializer(data={"refresh": raw})
         try:
             serializer.is_valid(raise_exception=True)
         except (TokenError, ValidationError):
-            return clear_auth_cookies(
-                Response({"detail": "Your session has expired. Please sign in again."}, status=status.HTTP_401_UNAUTHORIZED)
-            )
+            return _session_expired()
         # With rotation on, the serializer returns a new refresh token and blacklists the old one.
         refresh = RefreshToken(serializer.validated_data["refresh"])
         return set_auth_cookies(Response({"detail": "Session refreshed."}), refresh)
@@ -359,11 +379,8 @@ class ChangePasswordView(APIView):
         serializer = ChangePasswordSerializer(data=request.data, context={"request": request})
         serializer.is_valid(raise_exception=True)
         user = request.user
-        check = check_current_password(user, serializer.validated_data["old_password"])
-        if check is PasswordCheck.LOCKED:
-            return _locked_out()
-        if check is PasswordCheck.WRONG:
-            return _wrong_password()
+        if rejected := _reject_password(user, serializer.validated_data["old_password"]):
+            return rejected
 
         user.set_password(serializer.validated_data["new_password"])
         user.save(update_fields=["password"])
@@ -386,11 +403,8 @@ class StartEmailChangeView(APIView):
         serializer = StartEmailChangeSerializer(data=request.data, context={"request": request})
         serializer.is_valid(raise_exception=True)
         user = request.user
-        check = check_current_password(user, serializer.validated_data["password"])
-        if check is PasswordCheck.LOCKED:
-            return _locked_out()
-        if check is PasswordCheck.WRONG:
-            return _wrong_password()
+        if rejected := _reject_password(user, serializer.validated_data["password"]):
+            return rejected
 
         new_email = serializer.validated_data["new_email"]
         code = start_email_change(user, new_email)
@@ -426,10 +440,7 @@ class ConfirmEmailChangeView(APIView):
             return Response({"detail": "That email address is already in use."}, status=status.HTTP_400_BAD_REQUEST)
 
         old_email = user.email
-        user.email = new_email
-        user.username = new_email
-        user.is_email_verified = True
-        user.save(update_fields=["email", "username", "is_email_verified"])
+        _set_verified_email(user, new_email)
         pending.delete()
         end_all_sessions(user)
         send_after_commit(send_email_changed_alert, user, old_email, make_revert_token(user, old_email))
@@ -465,10 +476,7 @@ class RevertEmailChangeView(APIView):
                     {"detail": "That address now belongs to another account. Contact us and we'll help."},
                     status=status.HTTP_409_CONFLICT,
                 )
-            user.email = old_email
-            user.username = old_email
-            user.is_email_verified = True
-            user.save(update_fields=["email", "username", "is_email_verified"])
+            _set_verified_email(user, old_email)
         EmailChangeRequest.objects.filter(user=user).delete()
         end_all_sessions(user)
         send_after_commit(send_password_reset_email, user)
@@ -495,11 +503,8 @@ class DeleteAccountView(APIView):
         serializer = DeleteAccountSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         user = request.user
-        check = check_current_password(user, serializer.validated_data["password"])
-        if check is PasswordCheck.LOCKED:
-            return _locked_out()
-        if check is PasswordCheck.WRONG:
-            return _wrong_password()
+        if rejected := _reject_password(user, serializer.validated_data["password"]):
+            return rejected
 
         reasons = deletion_blockers(user)
         if reasons:

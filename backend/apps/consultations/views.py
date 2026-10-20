@@ -4,6 +4,7 @@ from rest_framework import mixins, permissions, status, viewsets
 from rest_framework.response import Response
 
 from apps.accounts.emails import send_consultation_confirmed_emails
+from apps.core.throttling import ThrottlePostsMixin
 
 from .models import Consultation, Expert
 from .serializers import BookConsultationSerializer, ConsultationSerializer, ExpertSerializer
@@ -22,7 +23,11 @@ class ExpertViewSet(viewsets.ReadOnlyModelViewSet):
 
 
 class ConsultationViewSet(
-    mixins.CreateModelMixin, mixins.ListModelMixin, mixins.RetrieveModelMixin, viewsets.GenericViewSet
+    ThrottlePostsMixin,
+    mixins.CreateModelMixin,
+    mixins.ListModelMixin,
+    mixins.RetrieveModelMixin,
+    viewsets.GenericViewSet,
 ):
     """A customer's own bookings. Creating one returns it unpaid; payment goes through /payments/initialize/."""
 
@@ -32,12 +37,6 @@ class ConsultationViewSet(
 
     def get_queryset(self):
         return Consultation.objects.filter(user=self.request.user).select_related("expert")
-
-    def get_throttles(self):
-        # Only booking is limited, not browsing your bookings.
-        if self.action == "create":
-            self.throttle_scope = "create"
-        return super().get_throttles()
 
     @transaction.atomic
     def create(self, request, *args, **kwargs):

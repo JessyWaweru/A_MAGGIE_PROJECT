@@ -3,6 +3,8 @@ from rest_framework import generics, permissions, viewsets
 from rest_framework.decorators import action
 from rest_framework.response import Response
 
+from apps.core.throttling import ThrottlePostsMixin
+
 from .filters import ProductFilter
 from .models import Category, Ingredient, PlantOrigin, Product, Review, Symptom, WishlistItem
 from .search import rank_products
@@ -20,6 +22,10 @@ from .serializers import (
 
 PRODUCT_RELATED = ("category", "plant_origin")
 PRODUCT_PREFETCH = ("symptoms", "ingredients", "gallery_images", "plant_gallery_images", "reviews__user")
+
+
+def active_products():
+    return Product.objects.filter(status=Product.Status.ACTIVE).select_related(*PRODUCT_RELATED)
 
 
 class ProductViewSet(viewsets.ReadOnlyModelViewSet):
@@ -40,7 +46,7 @@ class ProductViewSet(viewsets.ReadOnlyModelViewSet):
     permission_classes = [permissions.AllowAny]
 
     def get_queryset(self):
-        qs = Product.objects.filter(status=Product.Status.ACTIVE).select_related(*PRODUCT_RELATED)
+        qs = active_products()
         if self.action == "retrieve":
             qs = qs.prefetch_related(*PRODUCT_PREFETCH)
         else:
@@ -52,12 +58,20 @@ class ProductViewSet(viewsets.ReadOnlyModelViewSet):
             return ProductDetailSerializer
         return ProductListSerializer
 
-    @action(detail=False, methods=["get"])
-    def featured(self, request):
-        qs = self.filter_queryset(self.get_queryset().filter(is_featured=True))
+    def _list_filtered(self, **filters):
+        """A paginated list like the main endpoint, narrowed to e.g. featured products."""
+        qs = self.filter_queryset(self.get_queryset().filter(**filters))
         page = self.paginate_queryset(qs)
         serializer = self.get_serializer(page or qs, many=True)
         return self.get_paginated_response(serializer.data) if page is not None else Response(serializer.data)
+
+    @action(detail=False, methods=["get"])
+    def featured(self, request):
+        return self._list_filtered(is_featured=True)
+
+    @action(detail=False, methods=["get"])
+    def bestsellers(self, request):
+        return self._list_filtered(is_bestseller=True)
 
     @action(detail=False, methods=["get"], url_path="smart-search")
     def smart_search(self, request):
@@ -72,11 +86,7 @@ class ProductViewSet(viewsets.ReadOnlyModelViewSet):
         except ValueError:
             limit = 48
 
-        products = list(
-            Product.objects.filter(status=Product.Status.ACTIVE)
-            .select_related(*PRODUCT_RELATED)
-            .prefetch_related("symptoms", "ingredients")
-        )
+        products = list(active_products().prefetch_related("symptoms", "ingredients"))
         symptoms = list(Symptom.objects.all())
         ranked, concerns = rank_products(query, products, symptoms)
 
@@ -99,46 +109,37 @@ class ProductViewSet(viewsets.ReadOnlyModelViewSet):
             }
         )
 
-    @action(detail=False, methods=["get"])
-    def bestsellers(self, request):
-        qs = self.filter_queryset(self.get_queryset().filter(is_bestseller=True))
-        page = self.paginate_queryset(qs)
-        serializer = self.get_serializer(page or qs, many=True)
-        return self.get_paginated_response(serializer.data) if page is not None else Response(serializer.data)
+
+class ReferenceListViewSet(viewsets.ReadOnlyModelViewSet):
+    """Short public lists (categories, concerns...) returned whole, for filters and menus."""
+
+    permission_classes = [permissions.AllowAny]
+    pagination_class = None
+    lookup_field = "slug"
 
 
-class CategoryViewSet(viewsets.ReadOnlyModelViewSet):
+class CategoryViewSet(ReferenceListViewSet):
     queryset = Category.objects.all()
     serializer_class = CategorySerializer
-    lookup_field = "slug"
-    permission_classes = [permissions.AllowAny]
-    pagination_class = None
 
 
-class SymptomViewSet(viewsets.ReadOnlyModelViewSet):
+class SymptomViewSet(ReferenceListViewSet):
     queryset = Symptom.objects.all()
     serializer_class = SymptomSerializer
-    lookup_field = "slug"
-    permission_classes = [permissions.AllowAny]
-    pagination_class = None
 
 
-class IngredientViewSet(viewsets.ReadOnlyModelViewSet):
+class IngredientViewSet(ReferenceListViewSet):
     queryset = Ingredient.objects.all()
     serializer_class = IngredientSerializer
-    lookup_field = "slug"
-    permission_classes = [permissions.AllowAny]
-    pagination_class = None
 
 
-class PlantOriginViewSet(viewsets.ReadOnlyModelViewSet):
+class PlantOriginViewSet(ReferenceListViewSet):
     queryset = PlantOrigin.objects.all()
     serializer_class = PlantOriginSerializer
-    permission_classes = [permissions.AllowAny]
-    pagination_class = None
+    lookup_field = "pk"
 
 
-class ProductReviewListCreateView(generics.ListCreateAPIView):
+class ProductReviewListCreateView(ThrottlePostsMixin, generics.ListCreateAPIView):
     permission_classes = [permissions.IsAuthenticatedOrReadOnly]
 
     def get_product(self):
@@ -149,12 +150,6 @@ class ProductReviewListCreateView(generics.ListCreateAPIView):
 
     def get_serializer_class(self):
         return ReviewCreateSerializer if self.request.method == "POST" else ReviewSerializer
-
-    def get_throttles(self):
-        # Only posting is limited, not reading reviews.
-        if self.request.method == "POST":
-            self.throttle_scope = "create"
-        return super().get_throttles()
 
     def get_serializer_context(self):
         context = super().get_serializer_context()

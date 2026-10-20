@@ -90,3 +90,14 @@ class AnonRateThrottle(ClientIPMixin, throttling.AnonRateThrottle):
 
 class UserRateThrottle(ClientIPMixin, throttling.UserRateThrottle):
     pass
+
+
+class ThrottlePostsMixin:
+    """For views where reading is unlimited but posting (reviews, bookings) gets a tighter scope."""
+
+    post_throttle_scope = "create"
+
+    def get_throttles(self):
+        if self.request.method == "POST":
+            self.throttle_scope = self.post_throttle_scope
+        return super().get_throttles()
