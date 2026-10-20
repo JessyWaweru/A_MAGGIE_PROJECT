@@ -2,6 +2,7 @@ import base64
 import hashlib
 import hmac
 import json
+import logging
 import time
 from unittest import mock
 
@@ -279,3 +280,23 @@ class ApiDocsTests(TestCase):
     def test_api_docs_are_not_served_without_debug(self):
         self.assertEqual(APIClient().get("/api/docs/").status_code, 404)
         self.assertEqual(APIClient().get("/api/schema/").status_code, 404)
+
+
+class LoggingTests(TestCase):
+    """Crashes and our own log messages must reach the console, which is all Render keeps."""
+
+    def test_crash_is_logged_with_traceback(self):
+        self.addCleanup(cache.clear)  # the request counts towards the shared form rate limit
+        client = APIClient(raise_request_exception=False)
+        with mock.patch("apps.core.views.ContactMessageView.post", side_effect=RuntimeError("boom")):
+            with self.assertLogs("django.request", "ERROR") as logs:
+                response = client.post("/api/contact/", {}, format="json")
+        self.assertEqual(response.status_code, 500)
+        self.assertIn("/api/contact/", logs.output[0])
+        self.assertIn("RuntimeError: boom", logs.output[0])
+
+    def test_console_handlers_are_configured(self):
+        for name in ("apps", "django.request", "django.security"):
+            handlers = logging.getLogger(name).handlers
+            self.assertTrue(any(isinstance(h, logging.StreamHandler) for h in handlers), name)
+        self.assertTrue(logging.getLogger("apps.orders").isEnabledFor(logging.INFO))

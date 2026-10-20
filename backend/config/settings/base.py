@@ -114,6 +114,31 @@ MEDIA_ROOT = BASE_DIR / "media"
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
+# Logging: everything goes to the console, which Render shows under the service's Logs tab.
+# Without this, Django prints nothing when DEBUG is off - not even the traceback of a crash -
+# and our own logger.info() calls are dropped. Never log passwords, codes, tokens or full
+# card/M-Pesa details; ids and order numbers are enough to find a record.
+LOG_LEVEL = env("LOG_LEVEL", default="INFO")
+LOGGING = {
+    "version": 1,
+    "disable_existing_loggers": False,
+    "formatters": {
+        "plain": {"format": "{asctime} {levelname} {name}: {message}", "style": "{"},
+    },
+    "handlers": {
+        "console": {"class": "logging.StreamHandler", "formatter": "plain"},
+    },
+    "root": {"handlers": ["console"], "level": "WARNING"},
+    "loggers": {
+        # Our code (apps.orders.notifications, apps.payments.handlers, ...)
+        "apps": {"handlers": ["console"], "level": LOG_LEVEL, "propagate": False},
+        # Unhandled errors (500s) with their traceback; 4xx responses are normal and stay quiet.
+        "django.request": {"handlers": ["console"], "level": "ERROR", "propagate": False},
+        # Rejected hosts, bad CSRF tokens and similar probing.
+        "django.security": {"handlers": ["console"], "level": "WARNING", "propagate": False},
+    },
+}
+
 # django-rest-framework
 REST_FRAMEWORK = {
     "DEFAULT_AUTHENTICATION_CLASSES": (
