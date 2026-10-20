@@ -44,7 +44,12 @@ class CategoryAdmin(admin.ModelAdmin):
 
 @admin.register(Symptom)
 class SymptomAdmin(admin.ModelAdmin):
-    list_display = ["name", "icon"]
+    list_display = ["name", "icon", "has_intro"]
+    fields = ["name", "slug", "icon", "description", "intro"]
+
+    @admin.display(boolean=True, description="Page intro written")
+    def has_intro(self, obj):
+        return bool(obj.intro)
     prepopulated_fields = {"slug": ("name",)}
     search_fields = ["name"]
 

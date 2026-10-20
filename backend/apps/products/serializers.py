@@ -13,21 +13,31 @@ from .models import (
 )
 
 
-class CategorySerializer(serializers.ModelSerializer):
+class ActiveProductCountMixin(serializers.Serializer):
+    """How many products a customer can actually see here (not drafts or archived ones)."""
+
+    product_count = serializers.SerializerMethodField()
+
+    def get_product_count(self, obj):
+        # The list endpoints annotate this in one query; nested inside a product it's counted here.
+        count = getattr(obj, "active_product_count", None)
+        if count is None:
+            count = obj.products.filter(status=Product.Status.ACTIVE).count()
+        return count
+
+
+class CategorySerializer(ActiveProductCountMixin, serializers.ModelSerializer):
     image_url = serializers.ReadOnlyField()
-    product_count = serializers.IntegerField(source="products.count", read_only=True)
 
     class Meta:
         model = Category
         fields = ["id", "name", "slug", "description", "icon", "image_url", "product_count", "display_order"]
 
 
-class SymptomSerializer(serializers.ModelSerializer):
-    product_count = serializers.IntegerField(source="products.count", read_only=True)
-
+class SymptomSerializer(ActiveProductCountMixin, serializers.ModelSerializer):
     class Meta:
         model = Symptom
-        fields = ["id", "name", "slug", "description", "icon", "product_count"]
+        fields = ["id", "name", "slug", "description", "intro", "icon", "product_count"]
 
 
 class IngredientSerializer(serializers.ModelSerializer):

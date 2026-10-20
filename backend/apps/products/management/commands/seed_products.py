@@ -1,6 +1,7 @@
 from django.core.management.base import BaseCommand
 from django.db import transaction
 
+from apps.products.concern_intros import CONCERN_INTROS
 from apps.products.models import Category, Ingredient, PlantOrigin, Product, Symptom
 
 CATEGORIES = [
@@ -298,7 +299,8 @@ class Command(BaseCommand):
     @staticmethod
     def _get_or_create_symptom(data):
         obj, _ = Symptom.objects.get_or_create(
-            name=data["name"], defaults={"icon": data["icon"], "description": data["description"]}
+            name=data["name"],
+            defaults={"icon": data["icon"], "description": data["description"], "intro": CONCERN_INTROS.get(data["name"], "")},
         )
         return obj
 

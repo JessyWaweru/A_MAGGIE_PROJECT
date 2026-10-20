@@ -1,3 +1,4 @@
+from django.db.models import Count, Q
 from django.shortcuts import get_object_or_404
 from rest_framework import generics, permissions, viewsets
 from rest_framework.decorators import action
@@ -26,6 +27,13 @@ PRODUCT_PREFETCH = ("symptoms", "ingredients", "gallery_images", "plant_gallery_
 
 def active_products():
     return Product.objects.filter(status=Product.Status.ACTIVE).select_related(*PRODUCT_RELATED)
+
+
+def with_active_product_count(queryset):
+    # Django drops Meta.ordering from grouped queries, so it's restated here.
+    return queryset.annotate(
+        active_product_count=Count("products", filter=Q(products__status=Product.Status.ACTIVE), distinct=True)
+    ).order_by(*queryset.model._meta.ordering)
 
 
 class ProductViewSet(viewsets.ReadOnlyModelViewSet):
@@ -119,12 +127,12 @@ class ReferenceListViewSet(viewsets.ReadOnlyModelViewSet):
 
 
 class CategoryViewSet(ReferenceListViewSet):
-    queryset = Category.objects.all()
+    queryset = with_active_product_count(Category.objects.all())
     serializer_class = CategorySerializer
 
 
 class SymptomViewSet(ReferenceListViewSet):
-    queryset = Symptom.objects.all()
+    queryset = with_active_product_count(Symptom.objects.all())
     serializer_class = SymptomSerializer
 
 

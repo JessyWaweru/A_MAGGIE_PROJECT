@@ -47,6 +47,14 @@ class Symptom(TimeStampedModel):
     name = models.CharField(max_length=120, unique=True)
     slug = models.SlugField(max_length=140, unique=True, blank=True)
     description = models.TextField(blank=True)
+    intro = models.TextField(
+        blank=True,
+        help_text=(
+            "A few paragraphs for this concern's own page (goherbal.health/concerns/…), in the words "
+            "customers search with. Say which herbs are traditionally used for it and when to see a "
+            "doctor. Never say a remedy treats, cures or prevents anything."
+        ),
+    )
     icon = models.CharField(max_length=8, blank=True, help_text="A single emoji, e.g. 🤕")
 
     class Meta:

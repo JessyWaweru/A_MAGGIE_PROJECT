@@ -1,3 +1,5 @@
+import io
+
 from django.test import TestCase
 from rest_framework.test import APIClient
 
@@ -120,3 +122,53 @@ class VerifiedPurchaseReviewTests(TestCase):
         self.assertTrue(self.client.get(url).json()["reviews"][0]["is_mine"])
         self.assertFalse(other.get(url).json()["reviews"][0]["is_mine"])
         self.assertFalse(APIClient().get(url).json()["reviews"][0]["is_mine"])
+
+
+class ConcernEndpointTests(TestCase):
+    @classmethod
+    def setUpTestData(cls):
+        cls.insomnia = Symptom.objects.create(name="Insomnia", intro="Chamomile has long been sipped before bed.")
+        teas = Category.objects.create(name="Teas & Infusions")
+        Product.objects.create(name="Chamomile Dream Tea", price=450, category=teas).symptoms.add(cls.insomnia)
+        Product.objects.create(name="Hidden Draft", price=100, category=teas, status=Product.Status.DRAFT).symptoms.add(
+            cls.insomnia
+        )
+
+    def test_counts_only_products_customers_can_see(self):
+        client = APIClient()
+        self.assertEqual(client.get("/api/symptoms/").json()[0]["product_count"], 1)
+        self.assertEqual(client.get("/api/categories/").json()[0]["product_count"], 1)
+        product = client.get("/api/products/chamomile-dream-tea/").json()
+        self.assertEqual(product["symptoms"][0]["product_count"], 1)
+        self.assertEqual(product["category"]["product_count"], 1)
+
+    def test_lists_keep_their_order(self):
+        Symptom.objects.create(name="Acne")
+        Symptom.objects.create(name="Zinc Deficiency")
+        names = [s["name"] for s in APIClient().get("/api/symptoms/").json()]
+        self.assertEqual(names, sorted(names))
+
+    def test_concern_page_data_by_slug(self):
+        data = APIClient().get("/api/symptoms/insomnia/").json()
+        self.assertEqual(data["name"], "Insomnia")
+        self.assertEqual(data["intro"], "Chamomile has long been sipped before bed.")
+
+
+class ConcernIntroTests(TestCase):
+    def test_seed_fills_intros_without_overwriting_edits(self):
+        from django.core.management import call_command
+
+        from .concern_intros import CONCERN_INTROS
+
+        Symptom.objects.create(name="Insomnia", intro="Written by our team.")
+        call_command("seed_products", stdout=io.StringIO())
+        self.assertEqual(Symptom.objects.get(name="Insomnia").intro, "Written by our team.")
+        self.assertEqual(Symptom.objects.get(name="Headache").intro, CONCERN_INTROS["Headache"])
+
+    def test_intros_never_claim_to_treat_or_cure(self):
+        import re
+
+        from .concern_intros import CONCERN_INTROS
+
+        for name, text in CONCERN_INTROS.items():
+            self.assertIsNone(re.search(r"\b(cures?|treats?|heals?|prevents?|boosts?)\b", text, re.I), name)
