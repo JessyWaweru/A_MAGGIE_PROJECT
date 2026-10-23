@@ -1,11 +1,31 @@
+import logging
 from urllib.parse import quote
 
 from django.conf import settings
 from django.contrib.auth.tokens import default_token_generator
 from django.core.mail import send_mail
+from django.db import transaction
 from django.template.loader import render_to_string
 from django.utils.encoding import force_bytes
 from django.utils.http import urlsafe_base64_encode
+
+logger = logging.getLogger(__name__)
+
+
+def send_after_commit(send, *args):
+    """Run `send(*args)` once the current transaction is saved, logging rather than raising if it fails.
+
+    For emails that report something already done (a payment, a booking): a mail server
+    hiccup must never roll that back or turn the customer's request into an error.
+    """
+
+    def run():
+        try:
+            send(*args)
+        except Exception:
+            logger.exception("Could not send %s", send.__name__)
+
+    transaction.on_commit(run)
 
 
 def _send(subject, template_name, context, to_email):

@@ -4,7 +4,7 @@ from django.db import transaction
 from django.db.models import F
 from django.utils import timezone
 
-from apps.accounts.emails import send_consultation_confirmed_emails, send_order_confirmation_email
+from apps.accounts.emails import send_after_commit, send_consultation_confirmed_emails, send_order_confirmation_email
 from apps.consultations.models import Consultation
 from apps.orders.models import Order
 from apps.products.models import Product
@@ -75,7 +75,7 @@ def fulfill_successful_payment(payment: Payment, verify_data: dict):
                     stock_quantity=F("stock_quantity") - item.quantity
                 )
 
-        send_order_confirmation_email(order)
+        send_after_commit(send_order_confirmation_email, order)
 
     return payment
 
@@ -86,4 +86,4 @@ def _confirm_consultation(payment):
         consultation.status = Consultation.Status.CONFIRMED
         consultation.paid_at = timezone.now()
         consultation.save(update_fields=["status", "paid_at", "updated_at"])
-        send_consultation_confirmed_emails(consultation)
+        send_after_commit(send_consultation_confirmed_emails, consultation)

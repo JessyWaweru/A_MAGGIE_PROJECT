@@ -3,7 +3,7 @@ from django.utils import timezone
 from rest_framework import mixins, permissions, status, viewsets
 from rest_framework.response import Response
 
-from apps.accounts.emails import send_consultation_confirmed_emails
+from apps.accounts.emails import send_after_commit, send_consultation_confirmed_emails
 from apps.core.throttling import ThrottlePostsMixin
 
 from .models import Consultation, Expert
@@ -59,5 +59,5 @@ class ConsultationViewSet(
             # Free sessions skip Paystack, which can't charge zero.
             consultation.status = Consultation.Status.CONFIRMED
             consultation.save(update_fields=["status", "updated_at"])
-            send_consultation_confirmed_emails(consultation)
+            send_after_commit(send_consultation_confirmed_emails, consultation)
         return Response(ConsultationSerializer(consultation).data, status=status.HTTP_201_CREATED)

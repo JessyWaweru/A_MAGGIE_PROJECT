@@ -47,6 +47,31 @@ def initialize_transaction(email: str, amount, reference: str, callback_url: str
     return data["data"]
 
 
+def charge_mpesa(email: str, amount, reference: str, phone: str, metadata: dict | None = None):
+    """Send an M-Pesa prompt (STK push) straight to the customer's phone, without the Paystack page.
+
+    Paystack answers "pay_offline" while it waits for the customer's PIN; the outcome then arrives
+    as a charge.success webhook, or through verify_transaction. The customer has 180 seconds.
+    """
+    response = requests.post(
+        f"{settings.PAYSTACK_BASE_URL}/charge",
+        headers=_headers(),
+        json={
+            "email": email,
+            "amount": to_subunit(amount),
+            "reference": reference,
+            "currency": settings.PAYMENT_CURRENCY,
+            "mobile_money": {"phone": phone, "provider": "mpesa"},
+            "metadata": metadata or {},
+        },
+        timeout=30,
+    )
+    data = response.json()
+    if not response.ok or not data.get("status"):
+        raise PaystackError(data.get("message", "Failed to send the M-Pesa prompt."))
+    return data["data"]
+
+
 def verify_transaction(reference: str):
     response = requests.get(
         f"{settings.PAYSTACK_BASE_URL}/transaction/verify/{reference}",

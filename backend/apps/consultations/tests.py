@@ -72,8 +72,9 @@ class BookingTests(TestCase):
         consultation = Consultation.objects.get(reference=self.book().json()["reference"])
         payment = Payment.objects.create(consultation=consultation, amount=consultation.fee)
         paid = {"channel": "mobile_money", "amount": 150000, "currency": "KES"}
-        fulfill_successful_payment(payment, paid)
-        fulfill_successful_payment(payment, paid)  # webhook + verify both fire
+        with self.captureOnCommitCallbacks(execute=True):
+            fulfill_successful_payment(payment, paid)
+            fulfill_successful_payment(payment, paid)  # webhook + verify both fire
 
         consultation.refresh_from_db()
         self.assertEqual(consultation.status, Consultation.Status.CONFIRMED)
@@ -82,7 +83,8 @@ class BookingTests(TestCase):
     def test_free_session_is_confirmed_without_payment(self):
         self.expert.fee = 0
         self.expert.save()
-        res = self.book()
+        with self.captureOnCommitCallbacks(execute=True):
+            res = self.book()
         self.assertEqual(res.json()["status"], "confirmed")
         self.assertEqual(len(mail.outbox), 3)
 
